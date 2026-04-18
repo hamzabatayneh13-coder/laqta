@@ -1,0 +1,253 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+}
+
+enum Role {
+  BUYER
+  SELLER
+  ADMIN
+}
+
+enum KycStatus {
+  PENDING
+  APPROVED
+  REJECTED
+}
+
+enum ListingStatus {
+  DRAFT
+  PENDING_REVIEW
+  APPROVED
+  REJECTED
+}
+
+enum AuctionStatus {
+  DRAFT
+  PENDING_REVIEW
+  APPROVED
+  NEEDS_CHANGES
+  SCHEDULED
+  LIVE
+  PAUSED
+  ENDED_PENDING_PAYMENT
+  COMPLETED
+  CANCELLED
+}
+
+enum OrderStatus {
+  WON
+  PAYMENT_PENDING
+  PAID
+  ESCROW
+  COD_CONFIRMED
+  FULFILLMENT
+  SHIPPED
+  DELIVERED
+  COMPLETED
+  DISPUTED
+  CANCELLED
+}
+
+enum PaymentMethod {
+  ESCROW
+  COD
+}
+
+enum AdminDecision {
+  APPROVE
+  REJECT
+  REQUEST_CHANGES
+}
+
+
+enum DisputeStatus {
+  OPEN
+  UNDER_REVIEW
+  RESOLVED
+  REJECTED
+}
+
+model User {
+  id           BigInt   @id @default(autoincrement())
+  fullName     String
+  phone        String?  @unique
+  email        String?  @unique
+  passwordHash String
+  role         Role     @default(BUYER)
+  createdAt    DateTime @default(now())
+
+  sellerProfile SellerProfile?
+  kycDocuments  KycDocument[]
+
+  listings     Listing[] @relation("SellerListings")
+  auctions     Auction[] @relation("SellerAuctions")
+  bids         Bid[]
+  buyerOrders  Order[]   @relation("BuyerOrders")
+  sellerOrders Order[]   @relation("SellerOrders") // Added back-link for Seller Orders
+  disputes     Dispute[] @relation("UserDisputes")
+}
+
+model SellerProfile {
+  id          BigInt    @id @default(autoincrement())
+  userId      BigInt    @unique
+  companyName String?
+  allowsCod   Boolean   @default(true)
+  kycStatus   KycStatus @default(PENDING)
+  createdAt   DateTime  @default(now())
+
+  user User @relation(fields: [userId], references: [id])
+}
+
+model AuctionReview {
+  id             BigInt        @id @default(autoincrement())
+  auctionId      BigInt
+  adminId        BigInt
+  decision       AdminDecision
+  reason         String?
+  newDescription String?
+  createdAt      DateTime      @default(now())
+
+  auction Auction @relation(fields: [auctionId], references: [id])
+
+  @@index([auctionId, createdAt(sort: Desc)])
+}
+
+
+model KycDocument {
+  id        BigInt    @id @default(autoincrement())
+  userId    BigInt
+  type      String
+  filePath  String
+  status    KycStatus @default(PENDING)
+  createdAt DateTime  @default(now())
+
+  user User @relation(fields: [userId], references: [id])
+
+  @@index([userId, status])
+}
+
+model Category {
+  id     BigInt    @id @default(autoincrement())
+  slug   String    @unique
+  nameEn String
+  nameAr String
+  listings Listing[] // Added back-link for Listings
+}
+
+model Listing {
+  id          BigInt        @id @default(autoincrement())
+  sellerId    BigInt
+  categoryId  BigInt
+  title       String
+  description String?
+  location    String?
+  status      ListingStatus @default(DRAFT)
+  createdAt   DateTime      @default(now())
+
+  seller   User           @relation("SellerListings", fields: [sellerId], references: [id])
+  category Category       @relation(fields: [categoryId], references: [id])
+  media    ListingMedia[]
+  auction  Auction?
+}
+
+model ListingMedia {
+  id        BigInt   @id @default(autoincrement())
+  listingId BigInt
+  filePath  String
+  createdAt DateTime @default(now())
+
+  listing Listing @relation(fields: [listingId], references: [id])
+}
+
+model Auction {
+  id                      BigInt        @id @default(autoincrement())
+  listingId               BigInt        @unique
+  sellerId                BigInt
+  status                  AuctionStatus @default(SCHEDULED)
+  startsAt                DateTime
+  endsAt                  DateTime
+
+  pausedAt                DateTime?  // ✅ when admin paused it
+  totalPausedMs           BigInt     @default(0) // ✅ total paused time in milliseconds
+
+  // ✅ NEW: seller starting price
+  startPrice              Decimal       @default(0.0)
+
+  bidStep                 Decimal       @default(1.0)
+  currentPrice            Decimal       @default(0.0)
+  currentWinnerUserId     BigInt?
+  reservePrice            Decimal?
+  reserveMode             String        @default("SELLER_CHOICE")
+  antiSnipingEnabled      Boolean       @default(true)
+  antiSnipingLastSeconds  Int           @default(60)
+  antiSnipingExtendSeconds Int          @default(120)
+  createdAt               DateTime      @default(now())
+
+  listing Listing @relation(fields: [listingId], references: [id])
+  seller  User    @relation("SellerAuctions", fields: [sellerId], references: [id])
+
+  bids    Bid[]
+  order   Order?
+
+  reviews AuctionReview[]
+
+  @@index([status, endsAt])
+}
+
+
+model Bid {
+  id        BigInt   @id @default(autoincrement())
+  auctionId BigInt
+  userId    BigInt
+  amount    Decimal
+  createdAt DateTime @default(now())
+
+  auction Auction @relation(fields: [auctionId], references: [id])
+  user    User    @relation(fields: [userId], references: [id])
+
+  @@index([auctionId, createdAt(sort: Desc)])
+}
+
+model Order {
+  id            BigInt        @id @default(autoincrement())
+  auctionId     BigInt        @unique
+  buyerId       BigInt
+  sellerId      BigInt
+  finalPrice    Decimal
+  status        OrderStatus   @default(WON)
+  paymentMethod PaymentMethod
+  highValue     Boolean       @default(false)
+  createdAt     DateTime      @default(now())
+
+  auction  Auction   @relation(fields: [auctionId], references: [id])
+  buyer    User      @relation("BuyerOrders", fields: [buyerId], references: [id])
+  seller   User      @relation("SellerOrders", fields: [sellerId], references: [id]) // Fixed relation name to match User model
+  disputes Dispute[] // Added back-link for Disputes
+}
+
+model Dispute {
+  id              BigInt        @id @default(autoincrement())
+  orderId         BigInt
+  openedByUserId  BigInt
+  reason          String
+  details         String?
+  status          DisputeStatus @default(OPEN)
+  createdAt       DateTime      @default(now())
+
+  order    Order @relation(fields: [orderId], references: [id])
+  openedBy User  @relation("UserDisputes", fields: [openedByUserId], references: [id])
+}
+
+model AuditLog {
+  id        BigInt   @id @default(autoincrement())
+  adminId   BigInt
+  action    String
+  entity    String
+  entityId  String
+  metaJson  String?
+  createdAt DateTime @default(now())
+}
