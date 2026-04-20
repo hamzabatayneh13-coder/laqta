@@ -6,23 +6,20 @@ import { Pool } from 'pg';
 @Injectable()
 export class PrismaService extends PrismaClient implements OnModuleInit {
   constructor() {
-    // This creates the direct connection pipe to Postgres
-    const pool = new Pool({
-      connectionString: "postgresql://postgres:552003@localhost:5432/laqta?schema=public",
-    });
+    const connectionString = process.env.DATABASE_URL;
 
+    if (!connectionString) {
+      throw new Error('DATABASE_URL is missing');
+    }
+
+    const pool = new Pool({ connectionString });
     const adapter = new PrismaPg(pool);
 
-    // This satisfies the new Prisma 7 requirements
     super({ adapter });
   }
 
   async onModuleInit() {
-    try {
-      await this.$connect();
-      console.log('✅ DATABASE CONNECTED VIA ADAPTER');
-    } catch (error) {
-      console.error('❌ CONNECTION ERROR:', error);
-    }
+    await this.$connect();
+    console.log('✅ DATABASE CONNECTED VIA ADAPTER');
   }
 }
