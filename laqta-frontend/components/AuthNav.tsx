@@ -2,6 +2,7 @@
 
 import Link from "next/link";
 import { useEffect, useMemo, useRef, useState } from "react";
+import { getCachedMe, refreshMe, type MeUser } from "@/lib/me";
 
 type JwtPayload = {
   sub?: string;
@@ -29,15 +30,36 @@ function readToken() {
 
 export function AuthNav() {
   const [token, setToken] = useState<string | null>(null);
+  const [me, setMe] = useState<MeUser | null>(null);
   const [open, setOpen] = useState(false);
   const wrapperRef = useRef<HTMLDivElement | null>(null);
 
   useEffect(() => {
-    const sync = () => setToken(readToken());
-    sync();
-    const onAuth = () => sync();
+    const syncToken = () => setToken(readToken());
+    syncToken();
+
+    // Fast paint from cache, then refresh from server
+    setMe(getCachedMe());
+    refreshMe().then(setMe);
+
+    const onAuth = async () => {
+      syncToken();
+      const next = await refreshMe();
+      setMe(next);
+    };
+
+    const onMe = () => setMe(getCachedMe());
+    const onFocus = () => refreshMe().then(setMe);
+
     window.addEventListener("laqta:auth", onAuth);
-    return () => window.removeEventListener("laqta:auth", onAuth);
+    window.addEventListener("laqta:me", onMe);
+    window.addEventListener("focus", onFocus);
+
+    return () => {
+      window.removeEventListener("laqta:auth", onAuth);
+      window.removeEventListener("laqta:me", onMe);
+      window.removeEventListener("focus", onFocus);
+    };
   }, []);
 
   useEffect(() => {
@@ -51,8 +73,11 @@ export function AuthNav() {
   }, []);
 
   const payload = useMemo(() => (token ? decodeJwt(token) : null), [token]);
-  const role = payload?.role;
-  const displayName = payload?.fullName || payload?.name || "My Account";
+
+  // ✅ Prefer freshest server role; fallback to token role
+  const role = me?.role || payload?.role;
+  const displayName =
+    me?.fullName || payload?.fullName || payload?.name || "My Account";
 
   if (!token) {
     return (
@@ -121,7 +146,9 @@ export function AuthNav() {
             type="button"
             onClick={() => {
               sessionStorage.removeItem("laqta_token");
+              sessionStorage.removeItem("laqta_me");
               window.dispatchEvent(new Event("laqta:auth"));
+              window.dispatchEvent(new Event("laqta:me"));
               setOpen(false);
               window.location.href = "/auth/login";
             }}
