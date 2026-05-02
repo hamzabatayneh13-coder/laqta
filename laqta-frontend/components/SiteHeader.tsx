@@ -106,12 +106,40 @@ export default function SiteHeader() {
   // ✅ role now comes from server /auth/me (fresh), fallback to token if needed
   const role = me?.role || payload?.role;
 
+  // ✅ NEW: Sell button logic (no KYC / no onboarding)
+  const onSellClick = async (e: React.MouseEvent<HTMLAnchorElement>) => {
+    // If not logged in → allow normal navigation to login
+    if (!token) return;
+
+    // If already seller/admin → allow normal navigation to create auction
+    if (role === "SELLER" || role === "ADMIN") return;
+
+    // Otherwise: buyer → ask confirmation then upgrade to seller
+    e.preventDefault();
+
+    const ok = window.confirm("Do you want to be a seller?");
+    if (!ok) return;
+
+    try {
+      await apiFetch("/users/become-seller", { method: "POST" });
+
+      // refresh role immediately (optional but helps UI)
+      const next = await refreshMe();
+      setMe(next);
+
+      // go to create auction page
+      window.location.href = "/seller/auctions/new";
+    } catch (err: any) {
+      alert(err?.message || "Failed to become a seller. Please try again.");
+    }
+  };
+
   const sellHref =
     !token
       ? "/auth/login"
       : role === "SELLER" || role === "ADMIN"
         ? "/seller/auctions/new"
-        : "/seller/onboarding";
+        : "/seller/auctions/new"; // buyer will be intercepted by onSellClick
 
   return (
     <header className="sticky top-0 z-50 border-b border-white/10 bg-black/20 backdrop-blur">
@@ -152,21 +180,16 @@ export default function SiteHeader() {
                 <div className="h-px bg-white/10" />
 
                 {categories.length === 0 ? (
-                  <div className="px-4 py-3 text-sm text-white/70">
-                    No categories
-                  </div>
+                  <div className="px-4 py-3 text-sm text-white/70">No categories</div>
                 ) : (
                   categories.map((c) => (
                     <Link
                       key={String(c.id)}
-                      href={`/auctions/live?category=${encodeURIComponent(
-                        c.slug
-                      )}`}
+                      href={`/auctions/live?category=${encodeURIComponent(c.slug)}`}
                       onClick={() => setCatOpen(false)}
                       className="block px-4 py-3 text-sm text-white/85 hover:bg-white/10"
                     >
-                      {c.nameEn}{" "}
-                      <span className="text-white/50">({c.nameAr})</span>
+                      {c.nameEn} <span className="text-white/50">({c.nameAr})</span>
                     </Link>
                   ))
                 )}
@@ -174,7 +197,8 @@ export default function SiteHeader() {
             )}
           </div>
 
-          <Link className="hover:text-[#FF7A1A]" href={sellHref}>
+          {/* ✅ Sell now prompts BUYER to become SELLER */}
+          <Link className="hover:text-[#FF7A1A]" href={sellHref} onClick={onSellClick}>
             Sell
           </Link>
 

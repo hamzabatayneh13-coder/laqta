@@ -1,25 +1,137 @@
 "use client";
 
 import Link from "next/link";
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import HideWhenLoggedIn from "../components/HideWhenLoggedIn";
+import { apiFetch } from "@/lib/api";
+import { getCachedMe, refreshMe, type MeUser } from "@/lib/me";
 
+type PublicStats = {
+  liveNow: number;
+  endingSoon: number;
+};
+
+function readToken() {
+  if (typeof window === "undefined") return null;
+  return sessionStorage.getItem("laqta_token");
+}
 
 export default function HomePage() {
   const [journeyTab, setJourneyTab] = useState<"buyer" | "seller">("buyer");
 
+  // ---- REAL STATS (live + ending soon only) ----
+  const [stats, setStats] = useState<PublicStats>({
+    liveNow: 0,
+    endingSoon: 0,
+  });
+  const [statsLoading, setStatsLoading] = useState(true);
+
+  // ---- auth/me cache (to know role) ----
+  const [me, setMe] = useState<MeUser | null>(null);
+
+  useEffect(() => {
+    // fast UI
+    setMe(getCachedMe());
+    // refresh on mount
+    refreshMe()
+      .then(setMe)
+      .catch(() => setMe(getCachedMe()));
+  }, []);
+
+  useEffect(() => {
+    let cancelled = false;
+
+    async function load() {
+      try {
+        setStatsLoading(true);
+
+        /**
+         * Requires backend endpoint:
+         * GET {API}/api/public/stats
+         * returns: { liveNow, endingSoon }
+         */
+        const base = process.env.NEXT_PUBLIC_API_URL || "";
+        const res = await fetch(`${base}/api/public/stats`, { cache: "no-store" });
+
+        if (!res.ok) throw new Error(`Stats request failed: ${res.status}`);
+
+        const data = (await res.json()) as Partial<PublicStats>;
+        if (cancelled) return;
+
+        setStats({
+          liveNow: Number(data.liveNow ?? 0),
+          endingSoon: Number(data.endingSoon ?? 0),
+        });
+      } catch {
+        if (!cancelled) setStats({ liveNow: 0, endingSoon: 0 });
+      } finally {
+        if (!cancelled) setStatsLoading(false);
+      }
+    }
+
+    load();
+    return () => {
+      cancelled = true;
+    };
+  }, []);
+
+  // ✅ Updated (no KYC)
   const buyerSteps = useMemo(
     () => ["Browse", "Bid", "Win", "Pay (COD/Escrow)", "Receive"],
     []
   );
+
   const sellerSteps = useMemo(
-    () => ["Register", "KYC", "List", "Auction", "Deliver", "Get Paid"],
+    () => ["Register", "Become Seller", "List", "Auction", "Deliver", "Get Paid"],
     []
   );
 
+  const onStartSelling = async () => {
+    const token = readToken();
+
+    // not logged in -> go login
+    if (!token) {
+      window.location.href = "/auth/login";
+      return;
+    }
+
+    // refresh role (in case it changed)
+    let nextMe = me;
+    try {
+      nextMe = await refreshMe();
+      setMe(nextMe);
+    } catch {
+      // ignore; fallback to current me
+    }
+
+    const role = nextMe?.role;
+
+    // already seller/admin -> go directly
+    if (role === "SELLER" || role === "ADMIN") {
+      window.location.href = "/seller/auctions/new";
+      return;
+    }
+
+    // buyer -> confirm
+    const ok = window.confirm("Do you want to be a seller?");
+    if (!ok) return;
+
+    try {
+      await apiFetch("/users/become-seller", { method: "POST" });
+
+      // refresh + redirect
+      const updated = await refreshMe();
+      setMe(updated);
+
+      window.location.href = "/seller/auctions/new";
+    } catch (err: any) {
+      alert(err?.message || "Failed to become a seller. Please try again.");
+    }
+  };
+
   return (
     <div className="space-y-16">
-      {/* 1) HERO (Slide 1 content) */}
+      {/* 1) HERO */}
       <section className="pt-2">
         <div className="max-w-4xl">
           <div className="inline-flex items-center gap-2 rounded-full bg-[#FF7A1A]/15 px-4 py-2 text-sm font-semibold text-[#FF7A1A] ring-1 ring-[#FF7A1A]/25">
@@ -34,18 +146,14 @@ export default function HomePage() {
           </h1>
 
           <p className="mt-5 text-xl text-white/70">
-            Jordan's all-in-one live auction platform
+            Jordan&apos;s all-in-one live auction platform
             <br />
             <span className="font-semibold text-[#FF7A1A]">B2B</span>
             <span className="mx-3 text-white/30">•</span>
             <span className="font-semibold text-[#FF7A1A]">B2C</span>
-            <span className="mx-3 text-white/30">•</span>
-            <span className="font-semibold text-[#FF7A1A]">C2C</span>
-            <span className="mx-3 text-white/30">•</span>
-            <span className="font-semibold text-[#FF7A1A]">C2B</span>
           </p>
 
-          {/* CTAs (Browse Live Auctions / Start Selling) */}
+          {/* CTAs */}
           <div className="mt-8 flex flex-wrap gap-3">
             <Link
               href="/auctions/live"
@@ -53,26 +161,35 @@ export default function HomePage() {
             >
               Browse Live Auctions
             </Link>
-            <Link
-                href="/seller/onboarding"
-                className="rounded-2xl border border-white/15 bg-white/5 px-5 py-3 text-sm font-extrabold text-white hover:bg-white/10"
-              >
-                Start Selling
-              </Link>
+
+            <button
+              type="button"
+              onClick={onStartSelling}
+              className="rounded-2xl border border-white/15 bg-white/5 px-5 py-3 text-sm font-extrabold text-white hover:bg-white/10"
+            >
+              Start Selling
+            </button>
           </div>
 
-          {/* Live stats strip (dummy initially) */}
-          <div className="mt-10 grid grid-cols-1 gap-5 border-t border-white/10 pt-10 sm:grid-cols-3">
-            <MiniStat value="24" label="Live now" note="Auctions currently running" />
-            <MiniStat value="11" label="Ending soon" note="Closing in the next 60 min" />
-            <MiniStat value="128" label="Verified sellers" note="KYC approved sellers" />
+          {/* Live stats strip (REAL) - only 2 cards */}
+          <div className="mt-10 grid grid-cols-1 gap-5 border-t border-white/10 pt-10 sm:grid-cols-2">
+            <MiniStat
+              value={statsLoading ? "—" : String(stats.liveNow)}
+              label="Live now"
+              note="Auctions currently running"
+            />
+
+            <MiniStat
+              value={statsLoading ? "—" : String(stats.endingSoon)}
+              label="Ending soon"
+              note="Closing in the next 60 min"
+            />
           </div>
         </div>
       </section>
 
-      {/* 2) What we measure (Slide 3 content) */}
+      {/* 2) What we measure */}
       <section className="grid gap-6 lg:grid-cols-1">
-
         <div className="rounded-3xl border border-white/10 bg-white/5 p-7 shadow-2xl backdrop-blur">
           <div className="text-sm font-extrabold text-white/70">What we measure</div>
           <h3 className="mt-2 text-2xl font-extrabold text-white">Simple metrics panel</h3>
@@ -83,19 +200,17 @@ export default function HomePage() {
           <div className="mt-6 grid grid-cols-2 gap-4">
             <Metric value="Live bids/min" label="Bidding velocity" />
             <Metric value="Win rate" label="Bid → win conversion" />
-            <Metric value="KYC pass%" label="Seller verification" />
+            <Metric value="Seller growth" label="Buyer → Seller activation" />
             <Metric value="Dispute rate" label="Trust health" />
           </div>
         </div>
       </section>
 
-      {/* 3) HOW IT WORKS (Buyer + Seller Journey) */}
+      {/* 3) HOW IT WORKS */}
       <section>
         <div>
           <div className="text-sm font-extrabold text-white/70">How it works</div>
-          <h2 className="mt-2 text-3xl font-extrabold text-white">
-            Buyer + Seller Journey
-          </h2>
+          <h2 className="mt-2 text-3xl font-extrabold text-white">Buyer + Seller Journey</h2>
         </div>
 
         {/* Tabs */}
@@ -111,6 +226,7 @@ export default function HomePage() {
           >
             Buyer
           </button>
+
           <button
             onClick={() => setJourneyTab("seller")}
             className={[
@@ -129,7 +245,7 @@ export default function HomePage() {
           <div className="text-sm font-extrabold text-white/70">
             {journeyTab === "buyer"
               ? "Browse → Bid → Win → Pay (COD/Escrow) → Receive"
-              : "Register → KYC → List → Auction → Deliver → Get Paid"}
+              : "Register → Become Seller → List → Auction → Deliver → Get Paid"}
           </div>
 
           <div className="mt-5 flex flex-wrap gap-3">
@@ -148,7 +264,7 @@ export default function HomePage() {
         </div>
       </section>
 
-      {/* 4) CATEGORIES (from categories slide) */}
+      {/* 4) CATEGORIES */}
       <section>
         <div>
           <div className="text-sm font-extrabold text-white/70">Categories</div>
@@ -165,7 +281,7 @@ export default function HomePage() {
         </div>
       </section>
 
-      {/* 5) KEY FEATURES (Slide 5 content) */}
+      {/* 5) KEY FEATURES */}
       <section>
         <div>
           <div className="text-sm font-extrabold text-white/70">Key features</div>
@@ -177,26 +293,28 @@ export default function HomePage() {
         <div className="mt-6 grid gap-4 md:grid-cols-2 lg:grid-cols-4">
           <GlassCard title="Live bidding" desc="Real-time bid updates with Socket.IO." />
           <GlassCard title="Countdowns" desc="Clear auction timers + ending-soon emphasis." />
-          <GlassCard title="Verification" desc="Seller KYC + admin moderation queues." />
+          <GlassCard title="Instant selling" desc="Become a seller instantly with one click." />
           <GlassCard title="Trust + notifications" desc="Badges, alerts, and dispute workflow." />
         </div>
       </section>
 
-      {/* 8) FINAL CTA + FOOTER */}
+      {/* FINAL CTA + FOOTER */}
       <HideWhenLoggedIn>
         <section className="rounded-3xl border border-white/10 bg-gradient-to-r from-white/5 to-white/0 p-7 shadow-2xl backdrop-blur">
           <h2 className="text-3xl font-extrabold text-white">Ready to start?</h2>
           <p className="mt-2 max-w-2xl text-white/70">
-            Browse auctions, bid live, or start selling with a verified profile.
+            Browse auctions, bid live, or start selling instantly.
           </p>
 
           <div className="mt-6 flex flex-wrap gap-3">
-            <Link
-              href="/seller/onboarding"
+            <button
+              type="button"
+              onClick={onStartSelling}
               className="rounded-2xl bg-[#FF7A1A] px-5 py-3 text-sm font-extrabold text-black hover:brightness-110"
             >
               Start Selling
-            </Link>
+            </button>
+
             <Link
               href="/auctions/live"
               className="rounded-2xl border border-white/15 bg-white/5 px-5 py-3 text-sm font-extrabold text-white hover:bg-white/10"
@@ -207,10 +325,17 @@ export default function HomePage() {
 
           <div className="mt-10 flex flex-wrap items-center justify-between gap-4 border-t border-white/10 pt-6 text-sm text-white/60">
             <div>© {new Date().getFullYear()} Laqta (لقطة)</div>
+
             <div className="flex gap-4">
-              <Link className="hover:text-[#FF7A1A]" href="/terms">Terms</Link>
-              <Link className="hover:text-[#FF7A1A]" href="/privacy">Privacy</Link>
-              <Link className="hover:text-[#FF7A1A]" href="/support">Support</Link>
+              <Link className="hover:text-[#FF7A1A]" href="/terms">
+                Terms
+              </Link>
+              <Link className="hover:text-[#FF7A1A]" href="/privacy">
+                Privacy
+              </Link>
+              <Link className="hover:text-[#FF7A1A]" href="/support">
+                Support
+              </Link>
             </div>
           </div>
         </section>
