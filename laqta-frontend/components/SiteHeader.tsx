@@ -1,9 +1,10 @@
 "use client";
 
 import Link from "next/link";
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { AuthNav } from "./AuthNav";
 import { getCachedMe, refreshMe, type MeUser } from "@/lib/me";
+import { apiFetch } from "@/lib/api";
 
 type JwtPayload = {
   sub?: string;
@@ -12,6 +13,13 @@ type JwtPayload = {
   name?: string;
   exp?: number;
   iat?: number;
+};
+
+type Category = {
+  id: string | number;
+  slug: string;
+  nameEn: string;
+  nameAr: string;
 };
 
 function decodeJwt(token: string): JwtPayload | null {
@@ -32,6 +40,11 @@ function readToken() {
 export default function SiteHeader() {
   const [token, setToken] = useState<string | null>(null);
   const [me, setMe] = useState<MeUser | null>(null);
+
+  // ✅ Categories dropdown state
+  const [categories, setCategories] = useState<Category[]>([]);
+  const [catOpen, setCatOpen] = useState(false);
+  const catRef = useRef<HTMLDivElement | null>(null);
 
   useEffect(() => {
     const syncToken = () => setToken(readToken());
@@ -65,6 +78,29 @@ export default function SiteHeader() {
     };
   }, []);
 
+  // ✅ Load categories once
+  useEffect(() => {
+    (async () => {
+      try {
+        const data = (await apiFetch("/api/categories")) as Category[];
+        setCategories(Array.isArray(data) ? data : []);
+      } catch {
+        setCategories([]);
+      }
+    })();
+  }, []);
+
+  // ✅ Close categories dropdown on outside click
+  useEffect(() => {
+    function onDocClick(e: MouseEvent) {
+      if (!catRef.current) return;
+      if (catRef.current.contains(e.target as Node)) return;
+      setCatOpen(false);
+    }
+    document.addEventListener("mousedown", onDocClick);
+    return () => document.removeEventListener("mousedown", onDocClick);
+  }, []);
+
   const payload = useMemo(() => (token ? decodeJwt(token) : null), [token]);
 
   // ✅ role now comes from server /auth/me (fresh), fallback to token if needed
@@ -92,6 +128,51 @@ export default function SiteHeader() {
           <Link className="hover:text-[#FF7A1A]" href="/auctions/live">
             Live Auctions
           </Link>
+
+          {/* ✅ Categories for everyone */}
+          <div className="relative" ref={catRef}>
+            <button
+              type="button"
+              onClick={() => setCatOpen((v) => !v)}
+              className="hover:text-[#FF7A1A]"
+            >
+              Categories
+            </button>
+
+            {catOpen && (
+              <div className="absolute left-0 mt-2 w-64 overflow-hidden rounded-2xl border border-white/10 bg-[#070B14]/95 shadow-2xl backdrop-blur">
+                <Link
+                  href="/auctions/live"
+                  onClick={() => setCatOpen(false)}
+                  className="block px-4 py-3 text-sm text-white/85 hover:bg-white/10"
+                >
+                  All Categories
+                </Link>
+
+                <div className="h-px bg-white/10" />
+
+                {categories.length === 0 ? (
+                  <div className="px-4 py-3 text-sm text-white/70">
+                    No categories
+                  </div>
+                ) : (
+                  categories.map((c) => (
+                    <Link
+                      key={String(c.id)}
+                      href={`/auctions/live?category=${encodeURIComponent(
+                        c.slug
+                      )}`}
+                      onClick={() => setCatOpen(false)}
+                      className="block px-4 py-3 text-sm text-white/85 hover:bg-white/10"
+                    >
+                      {c.nameEn}{" "}
+                      <span className="text-white/50">({c.nameAr})</span>
+                    </Link>
+                  ))
+                )}
+              </div>
+            )}
+          </div>
 
           <Link className="hover:text-[#FF7A1A]" href={sellHref}>
             Sell
