@@ -83,7 +83,7 @@ export default function SiteHeader() {
     (async () => {
       try {
         // NOTE: backend has no /api prefix
-        const data = (await apiFetch("/categories")) as Category[];
+        const data = (await apiFetch("/api/categories")) as Category[];
         setCategories(Array.isArray(data) ? data : []);
       } catch {
         setCategories([]);
