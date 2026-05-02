@@ -213,7 +213,8 @@ export default function HomePage() {
       <section>
         <div>
           <div className="text-sm font-extrabold text-white/70">How it works</div>
-          <h2 className="mt-2 text-3xl font-extrabold text-white">Buyer + Seller Journey</h2        </div>
+          <h2 className="mt-2 text-3xl font-extrabold text-white">Buyer + Seller Journey</h2>        
+        </div>
 
         {/* Tabs */}
         <div className="mt-6 inline-flex rounded-2xl border border-white/10 bg-white/5 p-1 backdrop-blur">
