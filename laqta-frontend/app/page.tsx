@@ -47,11 +47,14 @@ export default function HomePage() {
 
         /**
          * Requires backend endpoint:
-         * GET {API}/api/public/stats
+         * GET {API}/public/stats
          * returns: { liveNow, endingSoon }
+         *
+         * NOTE: Your backend does NOT use app.setGlobalPrefix("api"),
+         * so endpoints are NOT under /api/*
          */
         const base = process.env.NEXT_PUBLIC_API_URL || "";
-        const res = await fetch(`${base}/api/public/stats`, { cache: "no-store" });
+        const res = await fetch(`${base}/public/stats`, { cache: "no-store" });
 
         if (!res.ok) throw new Error(`Stats request failed: ${res.status}`);
 
@@ -210,8 +213,7 @@ export default function HomePage() {
       <section>
         <div>
           <div className="text-sm font-extrabold text-white/70">How it works</div>
-          <h2 className="mt-2 text-3xl font-extrabold text-white">Buyer + Seller Journey</h2>
-        </div>
+          <h2 className="mt-2 text-3xl font-extrabold text-white">Buyer + Seller Journey</h2        </div>
 
         {/* Tabs */}
         <div className="mt-6 inline-flex rounded-2xl border border-white/10 bg-white/5 p-1 backdrop-blur">

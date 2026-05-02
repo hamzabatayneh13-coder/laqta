@@ -82,7 +82,8 @@ export default function SiteHeader() {
   useEffect(() => {
     (async () => {
       try {
-        const data = (await apiFetch("/api/categories")) as Category[];
+        // NOTE: backend has no /api prefix
+        const data = (await apiFetch("/categories")) as Category[];
         setCategories(Array.isArray(data) ? data : []);
       } catch {
         setCategories([]);
@@ -106,7 +107,7 @@ export default function SiteHeader() {
   // ✅ role now comes from server /auth/me (fresh), fallback to token if needed
   const role = me?.role || payload?.role;
 
-  // ✅ NEW: Sell button logic (no KYC / no onboarding)
+  // ✅ Sell button logic (no KYC / no onboarding)
   const onSellClick = async (e: React.MouseEvent<HTMLAnchorElement>) => {
     // If not logged in → allow normal navigation to login
     if (!token) return;
