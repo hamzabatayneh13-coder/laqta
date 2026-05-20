@@ -5,7 +5,7 @@ import { PublicService } from "./public.service";
 export class PublicController {
   constructor(private readonly publicService: PublicService) {}
 
-  // GET /api/public/stats
+  // GET /public/stats
   @Get("stats")
   getStats() {
     return this.publicService.getStats();
