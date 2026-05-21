@@ -494,6 +494,12 @@ export default function EditAuctionPage() {
                   const id = String(m.id);
                   const selected = selectedMediaIds.has(id);
 
+                  console.log("filePath:", m.filePath);
+                  console.log(
+                    "fullUrl:",
+                    new URL(m.filePath.startsWith("/") ? m.filePath : `/${m.filePath}`, API).toString()
+                  );
+
                   return (
                     <button
                       key={id}
