@@ -2,10 +2,11 @@
 
 import Link from "next/link";
 import { useEffect, useMemo, useRef, useState } from "react";
+import { useRouter } from "next/navigation";
+
 import { AuthNav } from "./AuthNav";
 import { getCachedMe, refreshMe, type MeUser } from "@/lib/me";
 import { apiFetch } from "@/lib/api";
-
 
 type JwtPayload = {
   sub?: string;
@@ -39,6 +40,8 @@ function readToken() {
 }
 
 export default function SiteHeader() {
+  const router = useRouter();
+
   const [token, setToken] = useState<string | null>(null);
   const [me, setMe] = useState<MeUser | null>(null);
 
@@ -46,6 +49,11 @@ export default function SiteHeader() {
   const [categories, setCategories] = useState<Category[]>([]);
   const [catOpen, setCatOpen] = useState(false);
   const catRef = useRef<HTMLDivElement | null>(null);
+
+  // ✅ Sell modal state (instead of window.confirm)
+  const [showSellerModal, setShowSellerModal] = useState(false);
+  const [becomingSeller, setBecomingSeller] = useState(false);
+  const [sellerErr, setSellerErr] = useState<string | null>(null);
 
   useEffect(() => {
     const syncToken = () => setToken(readToken());
@@ -83,7 +91,6 @@ export default function SiteHeader() {
   useEffect(() => {
     (async () => {
       try {
-        // NOTE: backend has no /api prefix
         const data = (await apiFetch("/api/categories")) as Category[];
         setCategories(Array.isArray(data) ? data : []);
       } catch {
@@ -106,21 +113,25 @@ export default function SiteHeader() {
   const payload = useMemo(() => (token ? decodeJwt(token) : null), [token]);
 
   // ✅ role now comes from server /auth/me (fresh), fallback to token if needed
-  const role = me?.role || payload?.role;
+  const role = me?.role || payload?.role; // BUYER | SELLER | ADMIN
 
-  // ✅ Sell button logic (no KYC / no onboarding)
-  const onSellClick = async (e: React.MouseEvent<HTMLAnchorElement>) => {
+  // ✅ Sell button logic
+  const onSellClick = (e: React.MouseEvent<HTMLAnchorElement>) => {
     // If not logged in → allow normal navigation to login
     if (!token) return;
 
     // If already seller/admin → allow normal navigation to create auction
     if (role === "SELLER" || role === "ADMIN") return;
 
-    // Otherwise: buyer → ask confirmation then upgrade to seller
+    // Otherwise: buyer → open modal (no navigation)
     e.preventDefault();
+    setSellerErr(null);
+    setShowSellerModal(true);
+  };
 
-    const ok = window.confirm("Do you want to be a seller?");
-    if (!ok) return;
+  async function confirmBecomeSeller() {
+    setSellerErr(null);
+    setBecomingSeller(true);
 
     try {
       await apiFetch("/users/become-seller", { method: "POST" });
@@ -129,12 +140,22 @@ export default function SiteHeader() {
       const next = await refreshMe();
       setMe(next);
 
-      // go to create auction page
-      window.location.href = "/seller/auctions/new";
+      setShowSellerModal(false);
+
+      // ✅ go to create auction page (same tab)
+      router.push("/seller/auctions/new");
     } catch (err: any) {
-      alert(err?.message || "Failed to become a seller. Please try again.");
+      setSellerErr(err?.message || "Failed to become a seller. Please try again.");
+    } finally {
+      setBecomingSeller(false);
     }
-  };
+  }
+
+  function declineBecomeSeller() {
+    setShowSellerModal(false);
+    // ✅ if he does NOT want to be a seller → go to live auctions
+    router.push("/auctions/live");
+  }
 
   const sellHref =
     !token
@@ -199,7 +220,7 @@ export default function SiteHeader() {
             )}
           </div>
 
-          {/* ✅ Sell now prompts BUYER to become SELLER */}
+          {/* ✅ Sell: buyer opens modal */}
           <Link className="hover:text-[#FF7A1A]" href={sellHref} onClick={onSellClick}>
             Sell
           </Link>
@@ -213,6 +234,62 @@ export default function SiteHeader() {
           <AuthNav />
         </nav>
       </div>
+
+      {/* ✅ Professional modal */}
+      {showSellerModal && (
+        <div className="fixed inset-0 z-[999] flex items-center justify-center px-4">
+          {/* backdrop */}
+          <div
+            className="absolute inset-0 bg-black/60 backdrop-blur-sm"
+            onClick={() => !becomingSeller && setShowSellerModal(false)}
+          />
+
+          {/* modal */}
+          <div className="relative w-full max-w-md rounded-3xl border border-white/10 bg-[#070B14] p-6 shadow-2xl">
+            <div className="text-lg font-extrabold text-white">Become a seller</div>
+
+            <p className="mt-2 text-sm text-white/70">
+              To create auctions, your account needs seller access. If you enable it now, you can
+              submit your first auction immediately.
+            </p>
+
+            <div className="mt-4 rounded-2xl border border-white/10 bg-white/5 p-4 text-sm text-white/75">
+              <div className="font-extrabold text-white/90">What you get</div>
+              <ul className="mt-2 list-disc space-y-1 pl-5">
+                <li>Create auctions and upload photos</li>
+                <li>Submit for admin review</li>
+                <li>Track status and bids</li>
+              </ul>
+            </div>
+
+            {sellerErr && (
+              <div className="mt-4 rounded-2xl border border-red-500/30 bg-red-500/10 p-3 text-sm text-red-100">
+                {sellerErr}
+              </div>
+            )}
+
+            <div className="mt-6 flex items-center justify-end gap-3">
+              <button
+                type="button"
+                disabled={becomingSeller}
+                onClick={declineBecomeSeller}
+                className="rounded-2xl border border-white/10 bg-white/5 px-4 py-2 text-sm font-extrabold text-white hover:bg-white/10 disabled:opacity-60"
+              >
+                Not now (go to Live)
+              </button>
+
+              <button
+                type="button"
+                disabled={becomingSeller}
+                onClick={confirmBecomeSeller}
+                className="rounded-2xl bg-[#FF7A1A] px-4 py-2 text-sm font-extrabold text-black hover:opacity-90 disabled:opacity-60"
+              >
+                {becomingSeller ? "Enabling..." : "Yes, become a seller"}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </header>
   );
 }
