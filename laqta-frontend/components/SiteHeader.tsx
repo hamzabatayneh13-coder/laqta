@@ -50,7 +50,7 @@ export default function SiteHeader() {
   const [catOpen, setCatOpen] = useState(false);
   const catRef = useRef<HTMLDivElement | null>(null);
 
-  // ✅ Sell modal state (instead of window.confirm)
+  // ✅ Sell modal state
   const [showSellerModal, setShowSellerModal] = useState(false);
   const [becomingSeller, setBecomingSeller] = useState(false);
   const [sellerErr, setSellerErr] = useState<string | null>(null);
@@ -136,7 +136,7 @@ export default function SiteHeader() {
     try {
       await apiFetch("/users/become-seller", { method: "POST" });
 
-      // refresh role immediately (optional but helps UI)
+      // refresh role immediately
       const next = await refreshMe();
       setMe(next);
 
@@ -235,57 +235,77 @@ export default function SiteHeader() {
         </nav>
       </div>
 
-      {/* ✅ Professional modal */}
+      {/* ✅ Improved centered + safe modal */}
       {showSellerModal && (
-        <div className="fixed inset-0 z-[999] flex items-center justify-center px-4">
-          {/* backdrop */}
-          <div
-            className="absolute inset-0 bg-black/60 backdrop-blur-sm"
+        <div className="fixed inset-0 z-[9999]">
+          {/* Backdrop (click closes) */}
+          <button
+            aria-label="Close"
+            className="absolute inset-0 cursor-default bg-black/60 backdrop-blur-sm"
             onClick={() => !becomingSeller && setShowSellerModal(false)}
           />
 
-          {/* modal */}
-          <div className="relative w-full max-w-md rounded-3xl border border-white/10 bg-[#070B14] p-6 shadow-2xl">
-            <div className="text-lg font-extrabold text-white">Become a seller</div>
+          {/* Center wrapper */}
+          <div className="relative flex min-h-full items-center justify-center p-4 sm:p-6">
+            <div className="w-full max-w-md rounded-3xl border border-white/10 bg-[#070B14] shadow-2xl">
+              {/* Header */}
+              <div className="flex items-start justify-between gap-3 p-6">
+                <div>
+                  <div className="text-lg font-extrabold text-white">Become a seller</div>
+                  <p className="mt-2 text-sm text-white/70">
+                    To create auctions, your account needs seller access. Enable it now and start
+                    selling.
+                  </p>
+                </div>
 
-            <p className="mt-2 text-sm text-white/70">
-              To create auctions, your account needs seller access. If you enable it now, you can
-              submit your first auction immediately.
-            </p>
-
-            <div className="mt-4 rounded-2xl border border-white/10 bg-white/5 p-4 text-sm text-white/75">
-              <div className="font-extrabold text-white/90">What you get</div>
-              <ul className="mt-2 list-disc space-y-1 pl-5">
-                <li>Create auctions and upload photos</li>
-                <li>Submit for admin review</li>
-                <li>Track status and bids</li>
-              </ul>
-            </div>
-
-            {sellerErr && (
-              <div className="mt-4 rounded-2xl border border-red-500/30 bg-red-500/10 p-3 text-sm text-red-100">
-                {sellerErr}
+                <button
+                  type="button"
+                  disabled={becomingSeller}
+                  onClick={() => setShowSellerModal(false)}
+                  className="rounded-xl border border-white/10 bg-white/5 px-3 py-1 text-sm font-extrabold text-white hover:bg-white/10 disabled:opacity-60"
+                >
+                  ✕
+                </button>
               </div>
-            )}
 
-            <div className="mt-6 flex items-center justify-end gap-3">
-              <button
-                type="button"
-                disabled={becomingSeller}
-                onClick={declineBecomeSeller}
-                className="rounded-2xl border border-white/10 bg-white/5 px-4 py-2 text-sm font-extrabold text-white hover:bg-white/10 disabled:opacity-60"
-              >
-                Not now (go to Live)
-              </button>
+              {/* Body (scroll-safe) */}
+              <div className="max-h-[60vh] overflow-auto px-6 pb-6">
+                <div className="rounded-2xl border border-white/10 bg-white/5 p-4 text-sm text-white/75">
+                  <div className="font-extrabold text-white/90">What you get</div>
+                  <ul className="mt-2 list-disc space-y-1 pl-5">
+                    <li>Create auctions and upload photos</li>
+                    <li>Submit for admin review</li>
+                    <li>Track status and bids</li>
+                  </ul>
+                </div>
 
-              <button
-                type="button"
-                disabled={becomingSeller}
-                onClick={confirmBecomeSeller}
-                className="rounded-2xl bg-[#FF7A1A] px-4 py-2 text-sm font-extrabold text-black hover:opacity-90 disabled:opacity-60"
-              >
-                {becomingSeller ? "Enabling..." : "Yes, become a seller"}
-              </button>
+                {sellerErr && (
+                  <div className="mt-4 rounded-2xl border border-red-500/30 bg-red-500/10 p-3 text-sm text-red-100">
+                    {sellerErr}
+                  </div>
+                )}
+
+                {/* Actions */}
+                <div className="mt-6 flex flex-col-reverse gap-3 sm:flex-row sm:justify-end">
+                  <button
+                    type="button"
+                    disabled={becomingSeller}
+                    onClick={declineBecomeSeller}
+                    className="rounded-2xl border border-white/10 bg-white/5 px-4 py-2 text-sm font-extrabold text-white hover:bg-white/10 disabled:opacity-60"
+                  >
+                    Not now (go to Live)
+                  </button>
+
+                  <button
+                    type="button"
+                    disabled={becomingSeller}
+                    onClick={confirmBecomeSeller}
+                    className="rounded-2xl bg-[#FF7A1A] px-4 py-2 text-sm font-extrabold text-black hover:opacity-90 disabled:opacity-60"
+                  >
+                    {becomingSeller ? "Enabling..." : "Yes, become a seller"}
+                  </button>
+                </div>
+              </div>
             </div>
           </div>
         </div>
