@@ -45,16 +45,15 @@ function toDateTimeLocalValue(iso: string) {
   const d = new Date(iso);
   if (isNaN(d.getTime())) return "";
   const pad = (n: number) => String(n).padStart(2, "0");
-  return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}T${pad(
-    d.getHours()
-  )}:${pad(d.getMinutes())}`;
+  return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}T${pad(d.getHours())}:${pad(
+    d.getMinutes()
+  )}`;
 }
 
 export default function EditAuctionPage() {
   const params = useParams<{ id: string }>();
   const router = useRouter();
   const auctionId = params?.id;
-
   const apiBase = useMemo(() => API, []);
 
   const [categories, setCategories] = useState<Category[]>([]);
@@ -65,10 +64,9 @@ export default function EditAuctionPage() {
   const [startPrice, setStartPrice] = useState("");
   const [description, setDescription] = useState("");
   const [endsAt, setEndsAt] = useState("");
-  const [files, setFiles] = useState<FileList | null>(null);
 
-  // ✅ preview selected new photos (before Save)
-  const [newPreviews, setNewPreviews] = useState<{ name: string; url: string }[]>([]);
+  // ✅ CHANGED: store new photos as File[] so we can remove individual files
+  const [newFiles, setNewFiles] = useState<File[]>([]);
 
   // ✅ selection state for bulk delete (existing photos)
   const [selectedMediaIds, setSelectedMediaIds] = useState<Set<string>>(new Set());
@@ -76,6 +74,7 @@ export default function EditAuctionPage() {
 
   const [loadingCats, setLoadingCats] = useState(false);
   const [loadingAuction, setLoadingAuction] = useState(false);
+
   const [saving, setSaving] = useState(false);
   const [resubmitting, setResubmitting] = useState(false);
 
@@ -83,21 +82,26 @@ export default function EditAuctionPage() {
   const [okMsg, setOkMsg] = useState<string | null>(null);
 
   const canEdit =
-    auction?.status === "NEEDS_CHANGES" ||
-    auction?.status === "DRAFT" ||
-    auction?.status === "PENDING_REVIEW";
-
+    auction?.status === "NEEDS_CHANGES" || auction?.status === "DRAFT" || auction?.status === "PENDING_REVIEW";
   const canResubmit = auction?.status === "NEEDS_CHANGES";
 
-  // cleanup previews on unmount
+  const media = Array.isArray(auction?.listing?.media) ? (auction!.listing!.media as MediaItem[]) : [];
+  const remainingSlots = Math.max(0, 10 - media.length);
+
+  // ✅ NEW: preview URLs for newFiles + cleanup
+  const newPreviews = useMemo(() => {
+    return newFiles.map((file) => ({
+      file,
+      name: file.name,
+      url: URL.createObjectURL(file),
+    }));
+  }, [newFiles]);
+
   useEffect(() => {
     return () => {
-      setNewPreviews((prev) => {
-        prev.forEach((p) => URL.revokeObjectURL(p.url));
-        return [];
-      });
+      newPreviews.forEach((p) => URL.revokeObjectURL(p.url));
     };
-  }, []);
+  }, [newPreviews]);
 
   // Load categories
   useEffect(() => {
@@ -137,18 +141,15 @@ export default function EditAuctionPage() {
 
       const existingCategoryId = data?.listing?.categoryId ?? data?.listing?.category?.id ?? "";
       setCategoryId(String(existingCategoryId || ""));
+
       setTitle(data?.listing?.title ?? "");
       setStartPrice(String(data?.startPrice ?? ""));
       setDescription(String(data?.listing?.description ?? ""));
       setEndsAt(data?.endsAt ? toDateTimeLocalValue(data.endsAt) : "");
 
-      // reset selections & new uploads (so UI reflects DB)
+      // reset selections & new uploads
       setSelectedMediaIds(new Set());
-      setFiles(null);
-      setNewPreviews((prev) => {
-        prev.forEach((p) => URL.revokeObjectURL(p.url));
-        return [];
-      });
+      setNewFiles([]);
     } catch (e: any) {
       setError(e?.message ?? "Failed to load auction");
     } finally {
@@ -161,8 +162,6 @@ export default function EditAuctionPage() {
     loadAuction();
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [auctionId]);
-
-  const media = Array.isArray(auction?.listing?.media) ? (auction!.listing!.media as MediaItem[]) : [];
 
   function toggleSelectMedia(id: string) {
     setSelectedMediaIds((prev) => {
@@ -212,6 +211,24 @@ export default function EditAuctionPage() {
     }
   }
 
+  // ✅ NEW: pick new files (append) + respect remainingSlots (max total 10)
+  function onPickNewFiles(e: React.ChangeEvent<HTMLInputElement>) {
+    const picked = Array.from(e.target.files ?? []);
+    if (picked.length === 0) return;
+
+    setNewFiles((prev) => {
+      const merged = [...prev, ...picked];
+      return merged.slice(0, remainingSlots);
+    });
+
+    // allow selecting same file again
+    e.target.value = "";
+  }
+
+  function removeNewFile(index: number) {
+    setNewFiles((prev) => prev.filter((_, i) => i !== index));
+  }
+
   // ✅ UPDATED: returns boolean so resubmit can auto-save and stop on failure
   async function onSave(opts?: { silent?: boolean }): Promise<boolean> {
     if (!auctionId) return false;
@@ -228,29 +245,14 @@ export default function EditAuctionPage() {
       return false;
     }
 
-    if (!categoryId) {
-      setError("Category is required");
-      return false;
-    }
-    if (!title.trim()) {
-      setError("Title is required");
-      return false;
-    }
+    if (!categoryId) return setError("Category is required"), false;
+    if (!title.trim()) return setError("Title is required"), false;
 
     const sp = Number(startPrice);
-    if (!Number.isFinite(sp) || sp < 0) {
-      setError("Start price must be a valid number (>= 0).");
-      return false;
-    }
+    if (!Number.isFinite(sp) || sp < 0) return setError("Start price must be a valid number (>= 0)."), false;
 
-    if (!description.trim()) {
-      setError("Description is required");
-      return false;
-    }
-    if (!endsAt) {
-      setError("Ends at is required");
-      return false;
-    }
+    if (!description.trim()) return setError("Description is required"), false;
+    if (!endsAt) return setError("Ends at is required"), false;
 
     setSaving(true);
 
@@ -258,9 +260,9 @@ export default function EditAuctionPage() {
       let photoPaths: string[] | undefined = undefined;
 
       // Upload new photos (append)
-      if (files && files.length > 0) {
+      if (newFiles.length > 0) {
         const fd = new FormData();
-        Array.from(files).forEach((f) => fd.append("files", f));
+        newFiles.forEach((f) => fd.append("files", f));
 
         const uploadRes = await apiUpload("/api/seller/auctions/photos", fd);
         photoPaths = uploadRes.photoPaths as string[];
@@ -281,12 +283,8 @@ export default function EditAuctionPage() {
 
       if (!opts?.silent) setOkMsg("Saved successfully.");
 
-      // clear previews after save
-      setNewPreviews((prev) => {
-        prev.forEach((p) => URL.revokeObjectURL(p.url));
-        return [];
-      });
-      setFiles(null);
+      // clear new files after save
+      setNewFiles([]);
 
       await loadAuction();
       return true;
@@ -315,7 +313,6 @@ export default function EditAuctionPage() {
       if (!saved) return;
 
       await apiFetch(`/api/seller/auctions/${auctionId}/resubmit`, { method: "POST" });
-
       setOkMsg("Resubmitted successfully. Pending admin review.");
       router.push("/seller/auctions");
     } catch (e: any) {
@@ -498,7 +495,9 @@ export default function EditAuctionPage() {
                       disabled={!canEdit}
                       onClick={() => toggleSelectMedia(id)}
                       className={`text-left rounded-2xl border p-2 transition disabled:opacity-60 ${
-                        selected ? "border-[#FF7A1A]/40 bg-[#FF7A1A]/10" : "border-white/10 bg-black/20 hover:bg-white/5"
+                        selected
+                          ? "border-[#FF7A1A]/40 bg-[#FF7A1A]/10"
+                          : "border-white/10 bg-black/20 hover:bg-white/5"
                       }`}
                       title={selected ? "Selected" : "Click to select"}
                     >
@@ -523,52 +522,52 @@ export default function EditAuctionPage() {
             </div>
           </div>
 
-          {/* Add new photos (append) + preview */}
+          {/* Add new photos (append) + preview + remove */}
           <div>
-            <label className={labelCls}>Add More Photos (optional, max 10)</label>
+            <div className="flex flex-wrap items-center justify-between gap-2">
+              <label className={labelCls}>Add More Photos (optional, max 10)</label>
+              <div className="text-xs text-white/50">
+                Remaining slots: <b className="text-white/70">{remainingSlots}</b>/10
+              </div>
+            </div>
 
             <input
               type="file"
               accept="image/*"
               multiple
-              disabled={!canEdit}
-              onChange={(e) => {
-                const fl = e.target.files;
-                setFiles(fl);
-
-                // cleanup old previews
-                setNewPreviews((prev) => {
-                  prev.forEach((p) => URL.revokeObjectURL(p.url));
-                  return [];
-                });
-
-                if (!fl || fl.length === 0) return;
-
-                const next = Array.from(fl).map((f) => ({
-                  name: f.name,
-                  url: URL.createObjectURL(f),
-                }));
-                setNewPreviews(next);
-              }}
+              disabled={!canEdit || remainingSlots === 0}
+              onChange={onPickNewFiles}
               className="block w-full text-sm text-white/80 file:mr-4 file:rounded-xl file:border-0 file:bg-white/10 file:px-4 file:py-2 file:text-sm file:font-extrabold file:text-white hover:file:bg-white/15 disabled:opacity-60"
             />
 
             {newPreviews.length > 0 && (
               <div className="mt-3">
                 <div className="text-sm font-extrabold text-white/80">New Photos (not saved yet)</div>
+
                 <div className="mt-2 grid grid-cols-2 gap-3 sm:grid-cols-3">
-                  {newPreviews.map((p) => (
-                    <div key={p.url} className="rounded-2xl border border-white/10 bg-black/20 p-2">
+                  {newPreviews.map((p, idx) => (
+                    <div key={p.url} className="relative rounded-2xl border border-white/10 bg-black/20 p-2">
                       {/* eslint-disable-next-line @next/next/no-img-element */}
                       <img
                         src={p.url}
                         alt={p.name}
                         className="h-28 w-full rounded-xl object-cover ring-1 ring-white/10"
                       />
+
+                      <button
+                        type="button"
+                        disabled={!canEdit}
+                        onClick={() => removeNewFile(idx)}
+                        className="absolute right-3 top-3 rounded-xl border border-white/10 bg-black/60 px-3 py-1 text-xs font-extrabold text-white hover:bg-black/75 disabled:opacity-60"
+                      >
+                        Remove
+                      </button>
+
                       <div className="mt-2 truncate text-xs text-white/60">{p.name}</div>
                     </div>
                   ))}
                 </div>
+
                 <div className="mt-2 text-xs text-white/50">
                   These will be uploaded when you click <b>Save Changes</b> — or <b>Resubmit for Review</b> (auto-saves).
                 </div>
