@@ -277,6 +277,9 @@ export default function NewAuctionPage() {
               {lang === "ar" ? "اذهب إلى مزاداتي →" : "Go to My Auctions →"}
             </Link>
 
+
+
+
             <button
               type="button"
               onClick={() => {
