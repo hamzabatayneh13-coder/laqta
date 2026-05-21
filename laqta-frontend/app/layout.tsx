@@ -1,11 +1,8 @@
 import "./globals.css";
-
 import SiteHeader from "../components/SiteHeader";
 import { ToastContainer } from "../components/Toast";
 import OutbidListener from "../components/OutbidListener";
 
-// ✅ add this import
-import { LanguageProvider } from "../components/i18n/LanguageProvider";
 
 export const metadata = {
   title: "Laqta (لقطة)",
@@ -26,15 +23,11 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
           <div className="absolute inset-0 bg-[linear-gradient(to_bottom,rgba(2,6,23,0.85),rgba(2,6,23,0.55),rgba(2,6,23,0.85))]" />
         </div>
 
-        {/* ✅ Wrap the whole app so any component can read the selected language */}
-        <LanguageProvider>
-          <SiteHeader />
+        <SiteHeader />
 
-          <main className="mx-auto max-w-6xl px-6 py-14">{children}</main>
-
-          <OutbidListener />
-          <ToastContainer />
-        </LanguageProvider>
+        <main className="mx-auto max-w-6xl px-6 py-14">{children}</main>
+        <OutbidListener />
+        <ToastContainer />
       </body>
     </html>
   );
