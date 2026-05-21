@@ -1,7 +1,7 @@
 "use client";
 
 import Link from "next/link";
-import { useEffect, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { apiFetch, apiUpload } from "@/lib/api";
 
 type Category = {
@@ -23,7 +23,9 @@ export default function NewAuctionPage() {
   const [startPrice, setStartPrice] = useState(""); // ✅ NEW
   const [description, setDescription] = useState("");
   const [endsAt, setEndsAt] = useState("");
-  const [files, setFiles] = useState<FileList | null>(null);
+
+  // ✅ CHANGED: use File[] to support remove
+  const [files, setFiles] = useState<File[]>([]);
 
   const [loadingCats, setLoadingCats] = useState(false);
   const [loading, setLoading] = useState(false);
@@ -56,6 +58,37 @@ export default function NewAuctionPage() {
     };
   }, []);
 
+  // ✅ NEW: create preview URLs and clean them up
+  const previews = useMemo(() => {
+    return files.map((file) => ({
+      file,
+      url: URL.createObjectURL(file),
+    }));
+  }, [files]);
+
+  useEffect(() => {
+    return () => {
+      previews.forEach((p) => URL.revokeObjectURL(p.url));
+    };
+  }, [previews]);
+
+  function onPickFiles(e: React.ChangeEvent<HTMLInputElement>) {
+    const picked = Array.from(e.target.files ?? []);
+    if (picked.length === 0) return;
+
+    setFiles((prev) => {
+      const merged = [...prev, ...picked];
+      return merged.slice(0, 10);
+    });
+
+    // allow selecting same file again later
+    e.target.value = "";
+  }
+
+  function removeFile(index: number) {
+    setFiles((prev) => prev.filter((_, i) => i !== index));
+  }
+
   async function onSubmit() {
     setError(null);
     setSuccess(null);
@@ -64,7 +97,8 @@ export default function NewAuctionPage() {
     if (!title.trim()) return setError("Title is required");
 
     const sp = Number(startPrice);
-    if (!Number.isFinite(sp) || sp < 0) return setError("Start price must be a valid number (>= 0).");
+    if (!Number.isFinite(sp) || sp < 0)
+      return setError("Start price must be a valid number (>= 0).");
 
     if (!description.trim()) return setError("Description is required");
     if (!endsAt) return setError("Ends at is required");
@@ -74,7 +108,7 @@ export default function NewAuctionPage() {
     try {
       // 1) Upload photos
       const fd = new FormData();
-      Array.from(files).forEach((f) => fd.append("files", f));
+      files.forEach((f) => fd.append("files", f));
 
       const uploadRes = await apiUpload("/api/seller/auctions/photos", fd);
       const photoPaths = uploadRes.photoPaths as string[];
@@ -174,9 +208,41 @@ export default function NewAuctionPage() {
               type="file"
               accept="image/*"
               multiple
-              onChange={(e) => setFiles(e.target.files)}
+              onChange={onPickFiles}
               className="block w-full text-sm text-white/80 file:mr-4 file:rounded-xl file:border-0 file:bg-white/10 file:px-4 file:py-2 file:text-sm file:font-extrabold file:text-white hover:file:bg-white/15"
             />
+
+            {/* ✅ NEW: previews + remove */}
+            {previews.length > 0 && (
+              <div className="mt-3">
+                <div className="mb-2 text-xs text-white/60">
+                  Selected: <b className="text-white/80">{previews.length}</b>/10
+                </div>
+
+                <div className="grid grid-cols-2 gap-3 sm:grid-cols-3">
+                  {previews.map((p, idx) => (
+                    <div
+                      key={p.url}
+                      className="relative overflow-hidden rounded-2xl border border-white/10 bg-white/5"
+                    >
+                      <img
+                        src={p.url}
+                        alt={`Selected ${idx + 1}`}
+                        className="h-32 w-full object-cover"
+                      />
+
+                      <button
+                        type="button"
+                        onClick={() => removeFile(idx)}
+                        className="absolute right-2 top-2 rounded-xl border border-white/10 bg-black/60 px-3 py-1 text-xs font-extrabold text-white hover:bg-black/75"
+                      >
+                        Remove
+                      </button>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            )}
           </div>
 
           {error && (
@@ -220,7 +286,7 @@ export default function NewAuctionPage() {
                 setStartPrice(""); // ✅ NEW reset
                 setDescription("");
                 setEndsAt("");
-                setFiles(null);
+                setFiles([]); // ✅ reset previews
                 setSuccess(null);
               }}
               className="rounded-2xl border border-white/10 bg-white/10 px-4 py-2 text-sm font-extrabold text-white hover:bg-white/15"
@@ -230,7 +296,9 @@ export default function NewAuctionPage() {
           </div>
 
           {success.auctionId && (
-            <div className="mt-3 text-xs text-emerald-100/60">Auction ID: {success.auctionId}</div>
+            <div className="mt-3 text-xs text-emerald-100/60">
+              Auction ID: {success.auctionId}
+            </div>
           )}
         </div>
       )}
