@@ -6,6 +6,11 @@ import { AuthNav } from "./AuthNav";
 import { getCachedMe, refreshMe, type MeUser } from "@/lib/me";
 import { apiFetch } from "@/lib/api";
 
+// ✅ language (toggle + strings)
+import LanguageToggle from "./i18n/LanguageToggle";
+import { useLang } from "./i18n/LanguageProvider";
+import { strings } from "@/lib/i18n/strings";
+
 type JwtPayload = {
   sub?: string;
   role?: string;
@@ -40,6 +45,10 @@ function readToken() {
 export default function SiteHeader() {
   const [token, setToken] = useState<string | null>(null);
   const [me, setMe] = useState<MeUser | null>(null);
+
+  // ✅ language state + translated strings
+  const { lang } = useLang();
+  const t = strings[lang];
 
   // ✅ Categories dropdown state
   const [categories, setCategories] = useState<Category[]>([]);
@@ -82,7 +91,7 @@ export default function SiteHeader() {
   useEffect(() => {
     (async () => {
       try {
-        // NOTE: backend has no /api prefix
+        // Your project uses /api prefix
         const data = (await apiFetch("/api/categories")) as Category[];
         setCategories(Array.isArray(data) ? data : []);
       } catch {
@@ -118,7 +127,11 @@ export default function SiteHeader() {
     // Otherwise: buyer → ask confirmation then upgrade to seller
     e.preventDefault();
 
-    const ok = window.confirm("Do you want to be a seller?");
+    const msg =
+      lang === "ar"
+        ? "هل تريد التحول إلى بائع؟"
+        : "Do you want to be a seller?";
+    const ok = window.confirm(msg);
     if (!ok) return;
 
     try {
@@ -131,7 +144,7 @@ export default function SiteHeader() {
       // go to create auction page
       window.location.href = "/seller/auctions/new";
     } catch (err: any) {
-      alert(err?.message || "Failed to become a seller. Please try again.");
+      alert(err?.message || (lang === "ar" ? "فشل التحويل إلى بائع" : "Failed to become a seller. Please try again."));
     }
   };
 
@@ -155,7 +168,7 @@ export default function SiteHeader() {
 
         <nav className="flex items-center gap-5 text-sm font-semibold text-white/80">
           <Link className="hover:text-[#FF7A1A]" href="/auctions/live">
-            Live Auctions
+            {t.nav.liveAuctions}
           </Link>
 
           {/* ✅ Categories for everyone */}
@@ -165,7 +178,7 @@ export default function SiteHeader() {
               onClick={() => setCatOpen((v) => !v)}
               className="hover:text-[#FF7A1A]"
             >
-              Categories
+              {t.nav.categories}
             </button>
 
             {catOpen && (
@@ -175,13 +188,15 @@ export default function SiteHeader() {
                   onClick={() => setCatOpen(false)}
                   className="block px-4 py-3 text-sm text-white/85 hover:bg-white/10"
                 >
-                  All Categories
+                  {lang === "ar" ? "كل التصنيفات" : "All Categories"}
                 </Link>
 
                 <div className="h-px bg-white/10" />
 
                 {categories.length === 0 ? (
-                  <div className="px-4 py-3 text-sm text-white/70">No categories</div>
+                  <div className="px-4 py-3 text-sm text-white/70">
+                    {lang === "ar" ? "لا توجد تصنيفات" : "No categories"}
+                  </div>
                 ) : (
                   categories.map((c) => (
                     <Link
@@ -190,7 +205,8 @@ export default function SiteHeader() {
                       onClick={() => setCatOpen(false)}
                       className="block px-4 py-3 text-sm text-white/85 hover:bg-white/10"
                     >
-                      {c.nameEn} <span className="text-white/50">({c.nameAr})</span>
+                      {/* ✅ show only one language */}
+                      {lang === "ar" ? c.nameAr : c.nameEn}
                     </Link>
                   ))
                 )}
@@ -200,14 +216,17 @@ export default function SiteHeader() {
 
           {/* ✅ Sell now prompts BUYER to become SELLER */}
           <Link className="hover:text-[#FF7A1A]" href={sellHref} onClick={onSellClick}>
-            Sell
+            {t.nav.sell}
           </Link>
 
           {role === "ADMIN" && (
             <Link className="hover:text-[#FF7A1A]" href="/admin">
-              Admin
+              {t.nav.admin}
             </Link>
           )}
+
+          {/* ✅ Language toggle button in header */}
+          <LanguageToggle />
 
           <AuthNav />
         </nav>

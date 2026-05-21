@@ -1,0 +1,4 @@
+{
+  "nav": { "liveAuctions": "Live Auctions", "categories": "Categories", "sell": "Sell", "admin": "Admin" },
+  "account": { "account": "Account", "logout": "Logout" }
+}

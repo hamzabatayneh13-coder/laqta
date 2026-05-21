@@ -4,6 +4,10 @@ import Link from "next/link";
 import { useEffect, useState } from "react";
 import { apiFetch, apiUpload } from "@/lib/api";
 
+// ✅ language
+import { useLang } from "@/components/i18n/LanguageProvider";
+import { strings } from "@/lib/i18n/strings";
+
 type Category = {
   id: string;
   slug: string;
@@ -16,6 +20,10 @@ const inputCls =
 const labelCls = "block text-sm font-extrabold text-white/80";
 
 export default function NewAuctionPage() {
+  // ✅ language
+  const { lang } = useLang();
+  const t = strings[lang];
+
   const [categories, setCategories] = useState<Category[]>([]);
   const [categoryId, setCategoryId] = useState<string>("");
 
@@ -37,15 +45,22 @@ export default function NewAuctionPage() {
     (async () => {
       setLoadingCats(true);
       setError(null);
+
       try {
         const data = await apiFetch("/api/categories");
         const list = Array.isArray(data) ? data : [];
         if (!mounted) return;
 
         setCategories(list);
+
         if (list.length) setCategoryId(String(list[0].id));
       } catch (e: any) {
-        if (mounted) setError(e?.message ?? "Failed to load categories");
+        if (mounted) {
+          setError(
+            e?.message ??
+              (lang === "ar" ? "فشل تحميل التصنيفات" : "Failed to load categories")
+          );
+        }
       } finally {
         if (mounted) setLoadingCats(false);
       }
@@ -54,23 +69,36 @@ export default function NewAuctionPage() {
     return () => {
       mounted = false;
     };
-  }, []);
+  }, [lang]);
 
   async function onSubmit() {
     setError(null);
     setSuccess(null);
 
-    if (!categoryId) return setError("Category is required");
-    if (!title.trim()) return setError("Title is required");
+    if (!categoryId)
+      return setError(lang === "ar" ? "التصنيف مطلوب" : "Category is required");
+    if (!title.trim())
+      return setError(lang === "ar" ? "العنوان مطلوب" : "Title is required");
 
     const sp = Number(startPrice);
-    if (!Number.isFinite(sp) || sp < 0) return setError("Start price must be a valid number (>= 0).");
+    if (!Number.isFinite(sp) || sp < 0)
+      return setError(
+        lang === "ar"
+          ? "السعر الابتدائي يجب أن يكون رقمًا صحيحًا (>= 0)."
+          : "Start price must be a valid number (>= 0)."
+      );
 
-    if (!description.trim()) return setError("Description is required");
-    if (!endsAt) return setError("Ends at is required");
-    if (!files || files.length === 0) return setError("At least 1 photo is required");
+    if (!description.trim())
+      return setError(lang === "ar" ? "الوصف مطلوب" : "Description is required");
+    if (!endsAt)
+      return setError(lang === "ar" ? "وقت الانتهاء مطلوب" : "Ends at is required");
+    if (!files || files.length === 0)
+      return setError(
+        lang === "ar" ? "مطلوب صورة واحدة على الأقل" : "At least 1 photo is required"
+      );
 
     setLoading(true);
+
     try {
       // 1) Upload photos
       const fd = new FormData();
@@ -94,7 +122,7 @@ export default function NewAuctionPage() {
 
       setSuccess({ auctionId: String(auction?.id ?? "") });
     } catch (e: any) {
-      setError(e?.message ?? "Failed");
+      setError(e?.message ?? (lang === "ar" ? "فشل الإرسال" : "Failed"));
     } finally {
       setLoading(false);
     }
@@ -103,16 +131,20 @@ export default function NewAuctionPage() {
   return (
     <div className="mx-auto max-w-3xl space-y-6 px-6 py-8">
       <div>
-        <h1 className="text-3xl font-extrabold text-white">Submit Auction for Review</h1>
+        <h1 className="text-3xl font-extrabold text-white">
+          {lang === "ar" ? "إرسال المزاد للمراجعة" : "Submit Auction for Review"}
+        </h1>
         <p className="mt-2 text-sm text-white/60">
-          Upload photos, choose category, and submit. Admin will approve / request changes / reject.
+          {lang === "ar"
+            ? "ارفع الصور، اختر التصنيف، ثم أرسل الطلب. سيقوم المدير بالموافقة/طلب تعديل/رفض."
+            : "Upload photos, choose category, and submit. Admin will approve / request changes / reject."}
         </p>
       </div>
 
       <div className="rounded-3xl border border-white/10 bg-white/5 p-6 shadow-2xl backdrop-blur">
         <div className="space-y-4">
           <div>
-            <label className={labelCls}>Category</label>
+            <label className={labelCls}>{t.auction.category}</label>
             <select
               value={categoryId}
               onChange={(e) => setCategoryId(e.target.value)}
@@ -126,30 +158,35 @@ export default function NewAuctionPage() {
                   value={String(c.id)}
                   style={{ backgroundColor: "#0d1117", color: "white" }}
                 >
-                  {c.nameEn} ({c.nameAr})
+                  {/* ✅ show only one language */}
+                  {lang === "ar" ? c.nameAr : c.nameEn}
                 </option>
               ))}
             </select>
           </div>
 
           <div>
-            <label className={labelCls}>Title</label>
-            <input value={title} onChange={(e) => setTitle(e.target.value)} className={inputCls} />
+            <label className={labelCls}>{t.auction.title}</label>
+            <input
+              value={title}
+              onChange={(e) => setTitle(e.target.value)}
+              className={inputCls}
+            />
           </div>
 
-          {/* ✅ NEW: Start price */}
+          {/* ✅ Start price */}
           <div>
-            <label className={labelCls}>Start Price (JOD)</label>
+            <label className={labelCls}>{t.auction.startPrice}</label>
             <input
               value={startPrice}
               onChange={(e) => setStartPrice(e.target.value)}
-              placeholder="e.g. 100"
+              placeholder={lang === "ar" ? "مثال: 100" : "e.g. 100"}
               className={inputCls}
             />
           </div>
 
           <div>
-            <label className={labelCls}>Description</label>
+            <label className={labelCls}>{t.auction.description}</label>
             <textarea
               value={description}
               onChange={(e) => setDescription(e.target.value)}
@@ -159,7 +196,7 @@ export default function NewAuctionPage() {
           </div>
 
           <div>
-            <label className={labelCls}>Ends At</label>
+            <label className={labelCls}>{lang === "ar" ? "ينتهي في" : "Ends At"}</label>
             <input
               type="datetime-local"
               value={endsAt}
@@ -169,7 +206,9 @@ export default function NewAuctionPage() {
           </div>
 
           <div>
-            <label className={labelCls}>Photos (max 10)</label>
+            <label className={labelCls}>
+              {lang === "ar" ? "صور (حد أقصى 10)" : "Photos (max 10)"}
+            </label>
             <input
               type="file"
               accept="image/*"
@@ -190,19 +229,44 @@ export default function NewAuctionPage() {
             onClick={onSubmit}
             className="w-full rounded-2xl bg-[#FF7A1A] px-5 py-3 text-sm font-extrabold text-black hover:opacity-90 disabled:opacity-60"
           >
-            {loading ? "Submitting..." : "Submit"}
+            {loading
+              ? lang === "ar"
+                ? "جاري الإرسال..."
+                : "Submitting..."
+              : t.auction.submit}
           </button>
         </div>
       </div>
 
       {success && (
         <div className="rounded-3xl border border-emerald-500/25 bg-emerald-500/10 p-6 text-emerald-50 shadow-2xl backdrop-blur">
-          <div className="text-sm font-extrabold text-emerald-200/90">Submitted successfully</div>
-          <div className="mt-2 text-lg font-extrabold">
-            Your auction is now <span className="text-emerald-200">Pending Review</span>.
+          <div className="text-sm font-extrabold text-emerald-200/90">
+            {lang === "ar" ? "تم الإرسال بنجاح" : "Submitted successfully"}
           </div>
+
+          <div className="mt-2 text-lg font-extrabold">
+            {lang === "ar" ? (
+              <>
+                مزادك الآن <span className="text-emerald-200">قيد المراجعة</span>.
+              </>
+            ) : (
+              <>
+                Your auction is now{" "}
+                <span className="text-emerald-200">Pending Review</span>.
+              </>
+            )}
+          </div>
+
           <div className="mt-2 text-sm text-emerald-100/80">
-            If changes are needed, you'll see a note in <b>My Auctions</b>.
+            {lang === "ar" ? (
+              <>
+                إذا لزم تعديل، سترى ملاحظة في <b>مزاداتي</b>.
+              </>
+            ) : (
+              <>
+                If changes are needed, you'll see a note in <b>My Auctions</b>.
+              </>
+            )}
           </div>
 
           <div className="mt-4 flex flex-wrap gap-3">
@@ -210,14 +274,14 @@ export default function NewAuctionPage() {
               href="/seller/auctions"
               className="rounded-2xl bg-emerald-400/20 px-4 py-2 text-sm font-extrabold text-emerald-100 ring-1 ring-emerald-500/30 hover:bg-emerald-400/25"
             >
-              Go to My Auctions →
+              {lang === "ar" ? "اذهب إلى مزاداتي →" : "Go to My Auctions →"}
             </Link>
 
             <button
               type="button"
               onClick={() => {
                 setTitle("");
-                setStartPrice(""); // ✅ NEW reset
+                setStartPrice(""); // reset
                 setDescription("");
                 setEndsAt("");
                 setFiles(null);
@@ -225,12 +289,14 @@ export default function NewAuctionPage() {
               }}
               className="rounded-2xl border border-white/10 bg-white/10 px-4 py-2 text-sm font-extrabold text-white hover:bg-white/15"
             >
-              Create another auction
+              {lang === "ar" ? "إنشاء مزاد آخر" : "Create another auction"}
             </button>
           </div>
 
           {success.auctionId && (
-            <div className="mt-3 text-xs text-emerald-100/60">Auction ID: {success.auctionId}</div>
+            <div className="mt-3 text-xs text-emerald-100/60">
+              Auction ID: {success.auctionId}
+            </div>
           )}
         </div>
       )}
