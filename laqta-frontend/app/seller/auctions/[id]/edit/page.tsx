@@ -88,6 +88,16 @@ export default function EditAuctionPage() {
   const media = Array.isArray(auction?.listing?.media) ? (auction!.listing!.media as MediaItem[]) : [];
   const remainingSlots = Math.max(0, 10 - media.length);
 
+  // ✅ helper: build correct absolute URL for media served from /uploads
+  function mediaUrl(filePath: string) {
+    if (!filePath) return "";
+    if (filePath.startsWith("http")) return filePath;
+
+    // ensures we always have a leading slash
+    const path = filePath.startsWith("/") ? filePath : `/${filePath}`;
+    return new URL(path, API).toString();
+  }
+
   // ✅ NEW: preview URLs for newFiles + cleanup
   const newPreviews = useMemo(() => {
     return newFiles.map((file) => ({
@@ -396,11 +406,7 @@ export default function EditAuctionPage() {
               style={{ backgroundColor: "#0d1117", color: "white" }}
             >
               {categories.map((c) => (
-                <option
-                  key={String(c.id)}
-                  value={String(c.id)}
-                  style={{ backgroundColor: "#0d1117", color: "white" }}
-                >
+                <option key={String(c.id)} value={String(c.id)} style={{ backgroundColor: "#0d1117", color: "white" }}>
                   {c.nameEn} ({c.nameAr})
                 </option>
               ))}
@@ -503,10 +509,11 @@ export default function EditAuctionPage() {
                     >
                       {/* eslint-disable-next-line @next/next/no-img-element */}
                       <img
-                        src={`${apiBase}${m.filePath}`}
+                        src={mediaUrl(m.filePath)}
                         alt="auction media"
                         className="h-28 w-full rounded-xl object-cover ring-1 ring-white/10"
                       />
+
                       <div className="mt-2 flex items-center justify-between gap-2">
                         <div className="text-xs font-extrabold text-white/80">{selected ? "Selected" : "Select"}</div>
                         <input type="checkbox" checked={selected} readOnly className="h-4 w-4 accent-[#FF7A1A]" />
@@ -576,7 +583,9 @@ export default function EditAuctionPage() {
           </div>
 
           {error && (
-            <div className="rounded-2xl border border-red-500/30 bg-red-500/10 p-3 text-sm text-red-100">{error}</div>
+            <div className="rounded-2xl border border-red-500/30 bg-red-500/10 p-3 text-sm text-red-100">
+              {error}
+            </div>
           )}
 
           {okMsg && (
