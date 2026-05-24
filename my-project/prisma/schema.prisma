@@ -63,7 +63,6 @@ enum AdminDecision {
   REQUEST_CHANGES
 }
 
-
 enum DisputeStatus {
   OPEN
   UNDER_REVIEW
@@ -82,12 +81,11 @@ model User {
 
   sellerProfile SellerProfile?
   kycDocuments  KycDocument[]
-
   listings     Listing[] @relation("SellerListings")
   auctions     Auction[] @relation("SellerAuctions")
   bids         Bid[]
   buyerOrders  Order[]   @relation("BuyerOrders")
-  sellerOrders Order[]   @relation("SellerOrders") // Added back-link for Seller Orders
+  sellerOrders Order[]   @relation("SellerOrders")
   disputes     Dispute[] @relation("UserDisputes")
 }
 
@@ -116,7 +114,6 @@ model AuctionReview {
   @@index([auctionId, createdAt(sort: Desc)])
 }
 
-
 model KycDocument {
   id        BigInt    @id @default(autoincrement())
   userId    BigInt
@@ -131,11 +128,15 @@ model KycDocument {
 }
 
 model Category {
-  id     BigInt    @id @default(autoincrement())
-  slug   String    @unique
+  id     BigInt @id @default(autoincrement())
+  slug   String @unique
   nameEn String
   nameAr String
-  listings Listing[] // Added back-link for Listings
+
+  // ✅ NEW: default minimum allowed bid amount for auctions in this category
+  defaultMinBid Decimal @default(1.0)
+
+  listings Listing[]
 }
 
 model Listing {
@@ -148,8 +149,8 @@ model Listing {
   status      ListingStatus @default(DRAFT)
   createdAt   DateTime      @default(now())
 
-  seller   User           @relation("SellerListings", fields: [sellerId], references: [id])
-  category Category       @relation(fields: [categoryId], references: [id])
+  seller   User     @relation("SellerListings", fields: [sellerId], references: [id])
+  category Category @relation(fields: [categoryId], references: [id])
   media    ListingMedia[]
   auction  Auction?
 }
@@ -164,40 +165,42 @@ model ListingMedia {
 }
 
 model Auction {
-  id                      BigInt        @id @default(autoincrement())
-  listingId               BigInt        @unique
-  sellerId                BigInt
-  status                  AuctionStatus @default(SCHEDULED)
-  startsAt                DateTime
-  endsAt                  DateTime
+  id                       BigInt        @id @default(autoincrement())
+  listingId                BigInt        @unique
+  sellerId                 BigInt
+  status                   AuctionStatus @default(SCHEDULED)
+  startsAt                 DateTime
+  endsAt                   DateTime
+  pausedAt                 DateTime?
+  totalPausedMs            BigInt        @default(0)
 
-  pausedAt                DateTime?  // ✅ when admin paused it
-  totalPausedMs           BigInt     @default(0) // ✅ total paused time in milliseconds
+  // ✅ seller starting price
+  startPrice               Decimal       @default(0.0)
 
-  // ✅ NEW: seller starting price
-  startPrice              Decimal       @default(0.0)
+  // ✅ minimum increment between bids
+  bidStep                  Decimal       @default(1.0)
 
-  bidStep                 Decimal       @default(1.0)
-  currentPrice            Decimal       @default(0.0)
-  currentWinnerUserId     BigInt?
-  reservePrice            Decimal?
-  reserveMode             String        @default("SELLER_CHOICE")
-  antiSnipingEnabled      Boolean       @default(true)
-  antiSnipingLastSeconds  Int           @default(60)
-  antiSnipingExtendSeconds Int          @default(120)
-  createdAt               DateTime      @default(now())
+  // ✅ NEW: admin sets this (defaults from category but editable); minimum allowed bid amount (floor)
+  minBid                   Decimal?
+
+  currentPrice             Decimal       @default(0.0)
+  currentWinnerUserId      BigInt?
+  reservePrice             Decimal?
+  reserveMode              String        @default("SELLER_CHOICE")
+  antiSnipingEnabled       Boolean       @default(true)
+  antiSnipingLastSeconds   Int           @default(60)
+  antiSnipingExtendSeconds Int           @default(120)
+  createdAt                DateTime      @default(now())
 
   listing Listing @relation(fields: [listingId], references: [id])
   seller  User    @relation("SellerAuctions", fields: [sellerId], references: [id])
 
   bids    Bid[]
   order   Order?
-
   reviews AuctionReview[]
 
   @@index([status, endsAt])
 }
-
 
 model Bid {
   id        BigInt   @id @default(autoincrement())
@@ -224,19 +227,19 @@ model Order {
   createdAt     DateTime      @default(now())
 
   auction  Auction   @relation(fields: [auctionId], references: [id])
-  buyer    User      @relation("BuyerOrders", fields: [buyerId], references: [id])
-  seller   User      @relation("SellerOrders", fields: [sellerId], references: [id]) // Fixed relation name to match User model
-  disputes Dispute[] // Added back-link for Disputes
+  buyer   User       @relation("BuyerOrders", fields: [buyerId], references: [id])
+  seller  User       @relation("SellerOrders", fields: [sellerId], references: [id])
+  disputes Dispute[]
 }
 
 model Dispute {
-  id              BigInt        @id @default(autoincrement())
-  orderId         BigInt
-  openedByUserId  BigInt
-  reason          String
-  details         String?
-  status          DisputeStatus @default(OPEN)
-  createdAt       DateTime      @default(now())
+  id             BigInt        @id @default(autoincrement())
+  orderId        BigInt
+  openedByUserId BigInt
+  reason         String
+  details        String?
+  status         DisputeStatus @default(OPEN)
+  createdAt      DateTime      @default(now())
 
   order    Order @relation(fields: [orderId], references: [id])
   openedBy User  @relation("UserDisputes", fields: [openedByUserId], references: [id])

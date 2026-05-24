@@ -38,12 +38,18 @@ export class AuctionsService {
 
     const current = new Prisma.Decimal(a.currentPrice ?? 0);
     const step = new Prisma.Decimal(a.bidStep ?? 1);
+
     const minNextBid = current.plus(step);
 
-    // return same object but with computed minNextBid (string for safe JSON)
+    // ✅ If minBid exists, UI might want to know the required minimum
+    const minBidFloor = new Prisma.Decimal(a.minBid ?? 0);
+    const requiredMinNextBid = Prisma.Decimal.max(minNextBid, minBidFloor);
+
     return {
       ...a,
       minNextBid: minNextBid.toString(),
+      minBid: (a.minBid ?? null)?.toString?.() ?? (a.minBid == null ? null : String(a.minBid)),
+      requiredMinNextBid: requiredMinNextBid.toString(),
     };
   }
 
@@ -62,13 +68,18 @@ export class AuctionsService {
       if (now >= endsAt) throw new BadRequestException('Auction ended');
 
       const current = new Prisma.Decimal(auction.currentPrice);
-      const step = new Prisma.Decimal(auction.bidStep);
-      const minBid = current.plus(step);
+      const step = new Prisma.Decimal(auction.bidStep ?? 1);
+
+      const minNextByStep = current.plus(step);
+
+      // ✅ NEW: enforce auction.minBid as a floor (minimum allowed bid amount)
+      const minBidFloor = new Prisma.Decimal(auction.minBid ?? 0);
+      const requiredMin = Prisma.Decimal.max(minNextByStep, minBidFloor);
 
       const bidAmount = new Prisma.Decimal(amount);
 
-      if (bidAmount.lessThan(minBid)) {
-        throw new BadRequestException(`Bid must be >= ${minBid.toFixed(0)}`);
+      if (bidAmount.lessThan(requiredMin)) {
+        throw new BadRequestException(`Bid must be >= ${requiredMin.toFixed(0)}`);
       }
 
       // ✅ Create bid
@@ -97,9 +108,7 @@ export class AuctionsService {
       if (auction.antiSnipingEnabled) {
         const secondsLeft = (newEndsAt.getTime() - now.getTime()) / 1000;
         if (secondsLeft <= Number(auction.antiSnipingLastSeconds || 0)) {
-          newEndsAt = new Date(
-            newEndsAt.getTime() + Number(auction.antiSnipingExtendSeconds || 0) * 1000,
-          );
+          newEndsAt = new Date(newEndsAt.getTime() + Number(auction.antiSnipingExtendSeconds || 0) * 1000);
         }
       }
 
@@ -146,9 +155,13 @@ export class AuctionsService {
       const freshStep = new Prisma.Decimal(fresh.bidStep ?? 1);
       const freshMinNextBid = freshCurrent.plus(freshStep);
 
+      const freshMinBidFloor = new Prisma.Decimal(fresh.minBid ?? 0);
+      const freshRequiredMin = Prisma.Decimal.max(freshMinNextBid, freshMinBidFloor);
+
       return {
         ...fresh,
         minNextBid: freshMinNextBid.toString(),
+        requiredMinNextBid: freshRequiredMin.toString(),
       };
     });
   }

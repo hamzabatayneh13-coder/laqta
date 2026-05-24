@@ -6,6 +6,7 @@ export class ApproveAuctionDto {
   @IsNumber()
   @Min(1)
   bidStep!: number;
+  minBid?: number; // ✅ NEW
 
   @IsString()
   @IsOptional()

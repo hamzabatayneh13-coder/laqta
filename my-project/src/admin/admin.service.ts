@@ -94,7 +94,6 @@ export class AdminService {
     });
   }
 
-  // ✅ UPDATED: now accepts reason and ALWAYS sets CANCELLED when admin closes
   async closeAuction(auctionId: bigint, adminId: bigint, reason?: string) {
     const auction: any = await this.prisma.auction.findUnique({
       where: { id: auctionId as any },
@@ -113,7 +112,7 @@ export class AdminService {
       const updated = await tx.auction.update({
         where: { id: auctionId as any },
         data: {
-          status: AuctionStatus.CANCELLED, // ✅ IMPORTANT
+          status: AuctionStatus.CANCELLED,
           endsAt: new Date(),
           pausedAt: null,
         } as any,
@@ -123,7 +122,6 @@ export class AdminService {
         data: {
           auctionId: auctionId as any,
           adminId: adminId as any,
-          // keeping enum as-is; reason text makes it clear it was a close/cancel by admin
           decision: AdminDecision.REJECT,
           reason: finalReason,
         } as any,
@@ -296,7 +294,6 @@ export class AdminService {
       data: { kycStatus: 'APPROVED' } as any,
     });
 
-    // ✅ FIX: never downgrade ADMIN to SELLER
     const user: any = await this.prisma.user.findUnique({
       where: { id: profile.userId },
       select: { role: true },
@@ -323,7 +320,6 @@ export class AdminService {
       data: { kycStatus: 'REJECTED' } as any,
     });
 
-    // ✅ FIX: never downgrade ADMIN to BUYER
     const user: any = await this.prisma.user.findUnique({
       where: { id: profile.userId },
       select: { role: true },
@@ -382,7 +378,6 @@ export class AdminService {
   }
 
   async getAuction(auctionId: bigint) {
-    // (unchanged - your existing implementation)
     const a: any = await this.prisma.auction.findUnique({
       where: { id: auctionId as any },
       include: {
@@ -428,6 +423,10 @@ export class AdminService {
 
       startPrice: a.startPrice?.toString?.() ?? String(a.startPrice ?? 0),
       bidStep: a.bidStep?.toString?.() ?? String(a.bidStep ?? 1),
+
+      // ✅ NEW: auction minBid saved by admin (nullable)
+      minBid: a.minBid?.toString?.() ?? (a.minBid == null ? null : String(a.minBid)),
+
       currentPrice: a.currentPrice?.toString?.() ?? String(a.currentPrice ?? 0),
 
       reservePrice: a.reservePrice?.toString?.() ?? (a.reservePrice == null ? null : String(a.reservePrice)),
@@ -438,6 +437,7 @@ export class AdminService {
       antiSnipingExtendSeconds: a.antiSnipingExtendSeconds,
 
       currentWinnerUserId: a.currentWinnerUserId?.toString?.() ?? null,
+
       winner: winner
         ? {
             id: winner.id.toString(),
@@ -476,7 +476,22 @@ export class AdminService {
         title: a.listing?.title ?? '—',
         description: a.listing?.description ?? null,
         location: a.listing?.location ?? '—',
+
+        // keep existing string
         category: a.listing?.category?.nameEn ?? '—',
+
+        // ✅ NEW: provide categoryObj so frontend can read defaultMinBid
+        categoryObj: a.listing?.category
+          ? {
+              id: a.listing.category.id.toString(),
+              nameEn: a.listing.category.nameEn,
+              nameAr: a.listing.category.nameAr,
+              defaultMinBid:
+                a.listing.category.defaultMinBid?.toString?.() ??
+                String(a.listing.category.defaultMinBid ?? 1),
+            }
+          : null,
+
         media: (a.listing?.media || []).map((m: any) => ({
           id: m.id.toString(),
           filePath: m.filePath,
@@ -510,9 +525,17 @@ export class AdminService {
     };
   }
 
-  async approveAuction(auctionId: bigint, adminId: bigint, bidStep: number, reason?: string) {
+  // ✅ UPDATED: approve now accepts minBid (editable) and defaults from category if not provided
+  async approveAuction(
+    auctionId: bigint,
+    adminId: bigint,
+    bidStep: number,
+    minBid?: number,
+    reason?: string,
+  ) {
     const auction: any = await this.prisma.auction.findUnique({
       where: { id: auctionId as any },
+      include: { listing: { include: { category: true } } },
     });
 
     if (!auction) throw new NotFoundException('Auction not found');
@@ -525,12 +548,24 @@ export class AdminService {
       throw new BadRequestException('bidStep must be a number greater than 0');
     }
 
+    if (minBid != null) {
+      if (!Number.isFinite(minBid) || minBid < 0) {
+        throw new BadRequestException('minBid must be a valid number (>= 0)');
+      }
+    }
+
+    const defaultMinBid =
+      auction?.listing?.category?.defaultMinBid != null ? Number(auction.listing.category.defaultMinBid) : 0;
+
+    const finalMinBid = minBid != null ? minBid : defaultMinBid;
+
     return this.prisma.$transaction(async (tx) => {
       const updated = await tx.auction.update({
         where: { id: auctionId as any },
         data: {
           status: AuctionStatus.SCHEDULED,
           bidStep: bidStep,
+          minBid: finalMinBid, // ✅ NEW
         } as any,
       });
 
@@ -548,6 +583,7 @@ export class AdminService {
         auctionId: updated.id.toString(),
         status: updated.status,
         bidStep: (updated as any).bidStep,
+        minBid: (updated as any).minBid,
       };
     });
   }

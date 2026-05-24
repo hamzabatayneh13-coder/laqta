@@ -3,10 +3,9 @@ import { AuthGuard } from '@nestjs/passport';
 import { AdminGuard } from './admin.guard';
 import { AdminService } from './admin.service';
 import { ApproveAuctionDto, RejectAuctionDto, RequestChangesAuctionDto } from './dto/auction-review.dto';
-import { UpdateAuctionEndTimeDto } from './dto/update-auction-time.dto';
 
 @Controller('api/admin')
-@UseGuards(AuthGuard('jwt'), AdminGuard) // ✅ both guards on all routes
+@UseGuards(AuthGuard('jwt'), AdminGuard)
 export class AdminController {
   constructor(private admin: AdminService) {}
 
@@ -60,16 +59,13 @@ export class AdminController {
       BigInt(id),
       BigInt(req.user.sub),
       body.bidStep,
+      body.minBid, // ✅ NEW
       body.reason,
     );
   }
 
   @Post('auctions/:id/request-changes')
-  requestChangesAuction(
-    @Param('id') id: string,
-    @Req() req: any,
-    @Body() body: RequestChangesAuctionDto,
-  ) {
+  requestChangesAuction(@Param('id') id: string, @Req() req: any, @Body() body: RequestChangesAuctionDto) {
     return this.admin.requestChangesAuction(
       BigInt(id),
       BigInt(req.user.sub),
@@ -93,13 +89,8 @@ export class AdminController {
     return this.admin.resumeAuction(BigInt(id), BigInt(req.user.sub));
   }
 
-  // ✅ UPDATED: accept optional reason (matches your frontend)
   @Post('auctions/:id/close')
-  closeAuction(
-    @Param('id') id: string,
-    @Req() req: any,
-    @Body() body?: { reason?: string },
-  ) {
+  closeAuction(@Param('id') id: string, @Req() req: any, @Body() body?: { reason?: string }) {
     return this.admin.closeAuction(BigInt(id), BigInt(req.user.sub), body?.reason);
   }
 }
