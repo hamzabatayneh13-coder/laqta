@@ -8,7 +8,7 @@
   "scripts": {
     "build": "nest build",
     "start": "node dist/main",
-    "start:prod": "prisma migrate deploy && node dist/main",
+    "start:prod": "prisma migrate deploy && nest start",
     "postinstall": "prisma generate"
   },
   "dependencies": {
