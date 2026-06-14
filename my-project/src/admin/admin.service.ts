@@ -1,10 +1,12 @@
 import { BadRequestException, Injectable, NotFoundException } from '@nestjs/common';
 import { PrismaService } from '../../prisma/prisma.service';
-import { AdminDecision, AuctionStatus } from '@prisma/client';
+import { AdminDecision, AuctionStatus, Prisma } from '@prisma/client';
 
 @Injectable()
 export class AdminService {
   constructor(private prisma: PrismaService) {}
+
+  // ── Auctions controls ───────────────────────────────
 
   async pauseAuction(auctionId: bigint, adminId: bigint) {
     const auction: any = await this.prisma.auction.findUnique({
@@ -12,7 +14,6 @@ export class AdminService {
     });
 
     if (!auction) throw new NotFoundException('Auction not found');
-
     if (auction.status !== AuctionStatus.LIVE) {
       throw new BadRequestException('Only LIVE auctions can be paused');
     }
@@ -49,11 +50,9 @@ export class AdminService {
     });
 
     if (!auction) throw new NotFoundException('Auction not found');
-
     if (auction.status !== AuctionStatus.PAUSED) {
       throw new BadRequestException('Only PAUSED auctions can be resumed');
     }
-
     if (!auction.pausedAt) {
       throw new BadRequestException('Auction is PAUSED but pausedAt is missing');
     }
@@ -136,6 +135,7 @@ export class AdminService {
   }
 
   // ── Stats ──────────────────────────────────────────────
+
   async getStats() {
     const [users, auctions, bids, pendingKyc] = await Promise.all([
       this.prisma.user.count(),
@@ -152,6 +152,7 @@ export class AdminService {
   }
 
   // ── Users ──────────────────────────────────────────────
+
   async listUsers() {
     const users: any[] = await this.prisma.user.findMany({
       orderBy: { createdAt: 'desc' },
@@ -230,6 +231,7 @@ export class AdminService {
     }));
 
     let sellerProfile: any = null;
+
     if (user.role === 'SELLER' || user.role === 'ADMIN') {
       const sp: any = await this.prisma.sellerProfile.findUnique({
         where: { userId: id as any },
@@ -259,6 +261,7 @@ export class AdminService {
   }
 
   // ── KYC ────────────────────────────────────────────────
+
   async listPendingKyc() {
     const profiles: any[] = await this.prisma.sellerProfile.findMany({
       include: {
@@ -287,6 +290,7 @@ export class AdminService {
     const profile: any = await this.prisma.sellerProfile.findUnique({
       where: { id: BigInt(profileId) as any },
     });
+
     if (!profile) throw new NotFoundException('Seller profile not found');
 
     await this.prisma.sellerProfile.update({
@@ -313,6 +317,7 @@ export class AdminService {
     const profile: any = await this.prisma.sellerProfile.findUnique({
       where: { id: BigInt(profileId) as any },
     });
+
     if (!profile) throw new NotFoundException('Seller profile not found');
 
     await this.prisma.sellerProfile.update({
@@ -335,7 +340,139 @@ export class AdminService {
     return { message: 'Seller rejected.' };
   }
 
+  // ── Categories (NEW) ───────────────────────────────────
+  // Admin-only CRUD for Category.defaultMinBid
+
+  async listCategories() {
+    const cats: any[] = await this.prisma.category.findMany({
+      orderBy: { nameEn: 'asc' } as any,
+    });
+
+    return cats.map((c) => ({
+      id: c.id.toString(),
+      slug: c.slug,
+      nameEn: c.nameEn,
+      nameAr: c.nameAr,
+      defaultMinBid: c.defaultMinBid?.toString?.() ?? String(c.defaultMinBid ?? 1),
+    }));
+  }
+
+  async createCategory(
+    adminId: bigint,
+    body: { slug: string; nameEn: string; nameAr: string; defaultMinBid?: number },
+  ) {
+    const slug = (body.slug || '').trim().toLowerCase();
+    const nameEn = (body.nameEn || '').trim();
+    const nameAr = (body.nameAr || '').trim();
+
+    if (!slug) throw new BadRequestException('slug is required');
+    if (!nameEn) throw new BadRequestException('nameEn is required');
+    if (!nameAr) throw new BadRequestException('nameAr is required');
+
+    const dmb = body.defaultMinBid ?? 1;
+    if (!Number.isFinite(dmb) || dmb < 0) throw new BadRequestException('defaultMinBid must be >= 0');
+
+    try {
+      const created: any = await this.prisma.category.create({
+        data: {
+          slug,
+          nameEn,
+          nameAr,
+          defaultMinBid: new Prisma.Decimal(dmb),
+        } as any,
+      });
+
+      await this.prisma.auditLog.create({
+        data: {
+          adminId: adminId as any,
+          action: 'CREATE_CATEGORY',
+          entity: 'Category',
+          entityId: created.id.toString(),
+          metaJson: JSON.stringify({ slug, nameEn, nameAr, defaultMinBid: dmb }),
+        } as any,
+      });
+
+      return {
+        message: 'Category created',
+        category: {
+          id: created.id.toString(),
+          slug: created.slug,
+          nameEn: created.nameEn,
+          nameAr: created.nameAr,
+          defaultMinBid: created.defaultMinBid.toString(),
+        },
+      };
+    } catch (e) {
+      throw new BadRequestException('Category slug already exists (or invalid input).');
+    }
+  }
+
+  async updateCategory(
+    adminId: bigint,
+    categoryId: bigint,
+    body: { slug?: string; nameEn?: string; nameAr?: string; defaultMinBid?: number },
+  ) {
+    const existing: any = await this.prisma.category.findUnique({
+      where: { id: categoryId as any },
+    });
+    if (!existing) throw new NotFoundException('Category not found');
+
+    const data: any = {};
+
+    if (body.slug !== undefined) {
+      const slug = String(body.slug).trim().toLowerCase();
+      if (!slug) throw new BadRequestException('slug cannot be empty');
+      data.slug = slug;
+    }
+    if (body.nameEn !== undefined) {
+      const nameEn = String(body.nameEn).trim();
+      if (!nameEn) throw new BadRequestException('nameEn cannot be empty');
+      data.nameEn = nameEn;
+    }
+    if (body.nameAr !== undefined) {
+      const nameAr = String(body.nameAr).trim();
+      if (!nameAr) throw new BadRequestException('nameAr cannot be empty');
+      data.nameAr = nameAr;
+    }
+    if (body.defaultMinBid !== undefined) {
+      const dmb = Number(body.defaultMinBid);
+      if (!Number.isFinite(dmb) || dmb < 0) throw new BadRequestException('defaultMinBid must be >= 0');
+      data.defaultMinBid = new Prisma.Decimal(dmb);
+    }
+
+    try {
+      const updated: any = await this.prisma.category.update({
+        where: { id: categoryId as any },
+        data,
+      });
+
+      await this.prisma.auditLog.create({
+        data: {
+          adminId: adminId as any,
+          action: 'UPDATE_CATEGORY',
+          entity: 'Category',
+          entityId: categoryId.toString(),
+          metaJson: JSON.stringify({ before: existing, after: data }),
+        } as any,
+      });
+
+      return {
+        message: 'Category updated',
+        category: {
+          id: updated.id.toString(),
+          slug: updated.slug,
+          nameEn: updated.nameEn,
+          nameAr: updated.nameAr,
+          defaultMinBid: updated.defaultMinBid.toString(),
+        },
+      };
+    } catch (e) {
+      throw new BadRequestException('Update failed (slug may already exist).');
+    }
+  }
+
   // ── Auctions review workflow ───────────────────────────
+
   async listAllAuctions(status?: string) {
     const auctions: any[] = await this.prisma.auction.findMany({
       where: status ? { status: status as any } : undefined,
@@ -417,25 +554,20 @@ export class AdminService {
       startsAt: a.startsAt,
       endsAt: a.endsAt,
       createdAt: a.createdAt,
-
       pausedAt: a.pausedAt,
       totalPausedMs: a.totalPausedMs?.toString?.() ?? String(a.totalPausedMs ?? 0),
-
       startPrice: a.startPrice?.toString?.() ?? String(a.startPrice ?? 0),
       bidStep: a.bidStep?.toString?.() ?? String(a.bidStep ?? 1),
 
-      // ✅ NEW: auction minBid saved by admin (nullable)
+      // minBid saved by admin (nullable)
       minBid: a.minBid?.toString?.() ?? (a.minBid == null ? null : String(a.minBid)),
 
       currentPrice: a.currentPrice?.toString?.() ?? String(a.currentPrice ?? 0),
-
       reservePrice: a.reservePrice?.toString?.() ?? (a.reservePrice == null ? null : String(a.reservePrice)),
       reserveMode: a.reserveMode,
-
       antiSnipingEnabled: a.antiSnipingEnabled,
       antiSnipingLastSeconds: a.antiSnipingLastSeconds,
       antiSnipingExtendSeconds: a.antiSnipingExtendSeconds,
-
       currentWinnerUserId: a.currentWinnerUserId?.toString?.() ?? null,
 
       winner: winner
@@ -477,18 +609,16 @@ export class AdminService {
         description: a.listing?.description ?? null,
         location: a.listing?.location ?? '—',
 
-        // keep existing string
         category: a.listing?.category?.nameEn ?? '—',
 
-        // ✅ NEW: provide categoryObj so frontend can read defaultMinBid
+        // provide categoryObj so frontend can read defaultMinBid
         categoryObj: a.listing?.category
           ? {
               id: a.listing.category.id.toString(),
               nameEn: a.listing.category.nameEn,
               nameAr: a.listing.category.nameAr,
               defaultMinBid:
-                a.listing.category.defaultMinBid?.toString?.() ??
-                String(a.listing.category.defaultMinBid ?? 1),
+                a.listing.category.defaultMinBid?.toString?.() ?? String(a.listing.category.defaultMinBid ?? 1),
             }
           : null,
 
@@ -525,14 +655,8 @@ export class AdminService {
     };
   }
 
-  // ✅ UPDATED: approve now accepts minBid (editable) and defaults from category if not provided
-  async approveAuction(
-    auctionId: bigint,
-    adminId: bigint,
-    bidStep: number,
-    minBid?: number,
-    reason?: string,
-  ) {
+  // approve now accepts minBid and defaults from category if not provided
+  async approveAuction(auctionId: bigint, adminId: bigint, bidStep: number, minBid?: number, reason?: string) {
     const auction: any = await this.prisma.auction.findUnique({
       where: { id: auctionId as any },
       include: { listing: { include: { category: true } } },
@@ -565,7 +689,7 @@ export class AdminService {
         data: {
           status: AuctionStatus.SCHEDULED,
           bidStep: bidStep,
-          minBid: finalMinBid, // ✅ NEW
+          minBid: finalMinBid,
         } as any,
       });
 

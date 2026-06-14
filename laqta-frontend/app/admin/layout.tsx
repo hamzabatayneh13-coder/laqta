@@ -65,7 +65,9 @@ export default function AdminLayout({ children }: { children: React.ReactNode })
     { href: "/admin/users", label: "👥 Users" },
     { href: "/admin/kyc", label: "🔐 KYC Review" },
     { href: "/admin/auctions", label: "📦 Auctions" },
+    { href: "/admin/categories", label: "🏷️ Categories" },
   ];
+
 
   return (
     <div className="min-h-screen">

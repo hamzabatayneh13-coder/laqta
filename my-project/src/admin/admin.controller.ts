@@ -1,4 +1,4 @@
-import { Body, Controller, Get, Post, Param, Query, Req, UseGuards } from '@nestjs/common';
+import { Body, Controller, Get, Param, Post, Put, Query, Req, UseGuards } from '@nestjs/common';
 import { AuthGuard } from '@nestjs/passport';
 import { AdminGuard } from './admin.guard';
 import { AdminService } from './admin.service';
@@ -42,6 +42,41 @@ export class AdminController {
     return this.admin.rejectKyc(id);
   }
 
+  // ── Categories (NEW) ──────────────────────
+  @Get('categories')
+  categories() {
+    return this.admin.listCategories();
+  }
+
+  @Post('categories')
+  createCategory(
+    @Req() req: any,
+    @Body()
+    body: {
+      slug: string;
+      nameEn: string;
+      nameAr: string;
+      defaultMinBid?: number;
+    },
+  ) {
+    return this.admin.createCategory(BigInt(req.user.sub), body);
+  }
+
+  @Put('categories/:id')
+  updateCategory(
+    @Req() req: any,
+    @Param('id') id: string,
+    @Body()
+    body: {
+      slug?: string;
+      nameEn?: string;
+      nameAr?: string;
+      defaultMinBid?: number;
+    },
+  ) {
+    return this.admin.updateCategory(BigInt(req.user.sub), BigInt(id), body);
+  }
+
   // ── Auctions ──────────────────────────────
   @Get('auctions')
   auctions(@Query('status') status?: string) {
@@ -59,7 +94,7 @@ export class AdminController {
       BigInt(id),
       BigInt(req.user.sub),
       body.bidStep,
-      body.minBid, // ✅ NEW
+      body.minBid, // minBid editable by admin
       body.reason,
     );
   }
