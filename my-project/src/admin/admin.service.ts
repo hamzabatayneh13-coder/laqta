@@ -348,12 +348,13 @@ export class AdminService {
       orderBy: { nameEn: 'asc' } as any,
     });
 
+    // ✅ Return as number (frontend expects number)
     return cats.map((c) => ({
       id: c.id.toString(),
       slug: c.slug,
       nameEn: c.nameEn,
       nameAr: c.nameAr,
-      defaultMinBid: c.defaultMinBid?.toString?.() ?? String(c.defaultMinBid ?? 1),
+      defaultMinBid: c.defaultMinBid == null ? 1 : Number(c.defaultMinBid),
     }));
   }
 
@@ -369,6 +370,7 @@ export class AdminService {
     if (!nameEn) throw new BadRequestException('nameEn is required');
     if (!nameAr) throw new BadRequestException('nameAr is required');
 
+    // ✅ keep default 1 only if you didn’t set it. Otherwise you can set 50 for Vehicles.
     const dmb = body.defaultMinBid ?? 1;
     if (!Number.isFinite(dmb) || dmb < 0) throw new BadRequestException('defaultMinBid must be >= 0');
 
@@ -399,7 +401,7 @@ export class AdminService {
           slug: created.slug,
           nameEn: created.nameEn,
           nameAr: created.nameAr,
-          defaultMinBid: created.defaultMinBid.toString(),
+          defaultMinBid: Number(created.defaultMinBid),
         },
       };
     } catch (e) {
@@ -463,7 +465,7 @@ export class AdminService {
           slug: updated.slug,
           nameEn: updated.nameEn,
           nameAr: updated.nameAr,
-          defaultMinBid: updated.defaultMinBid.toString(),
+          defaultMinBid: Number(updated.defaultMinBid),
         },
       };
     } catch (e) {
@@ -493,17 +495,34 @@ export class AdminService {
       endsAt: a.endsAt,
       createdAt: a.createdAt,
       bidsCount: a._count?.bids ?? 0,
+
+      // ✅ include bidStep so frontend can use it if already set
+      bidStep: a.bidStep == null ? null : Number(a.bidStep),
+
       listing: {
         id: a.listingId.toString(),
         title: a.listing?.title ?? '—',
         description: a.listing?.description ?? null,
         location: a.listing?.location ?? '—',
+
+        // keep the display field
         category: a.listing?.category?.nameEn ?? '—',
+
+        // ✅ NEW: give frontend the object and defaultMinBid as number
+        categoryObj: a.listing?.category
+          ? {
+              id: a.listing.category.id.toString(),
+              name: a.listing.category.nameEn,
+              defaultMinBid: a.listing.category.defaultMinBid == null ? 1 : Number(a.listing.category.defaultMinBid),
+            }
+          : null,
+
         media: (a.listing?.media || []).map((m: any) => ({
           id: m.id.toString(),
           filePath: m.filePath,
         })),
       },
+
       lastReview: a.reviews?.[0]
         ? {
             decision: a.reviews[0].decision,
@@ -557,10 +576,11 @@ export class AdminService {
       pausedAt: a.pausedAt,
       totalPausedMs: a.totalPausedMs?.toString?.() ?? String(a.totalPausedMs ?? 0),
       startPrice: a.startPrice?.toString?.() ?? String(a.startPrice ?? 0),
-      bidStep: a.bidStep?.toString?.() ?? String(a.bidStep ?? 1),
+
+      bidStep: a.bidStep == null ? null : Number(a.bidStep),
 
       // minBid saved by admin (nullable)
-      minBid: a.minBid?.toString?.() ?? (a.minBid == null ? null : String(a.minBid)),
+      minBid: a.minBid == null ? null : Number(a.minBid),
 
       currentPrice: a.currentPrice?.toString?.() ?? String(a.currentPrice ?? 0),
       reservePrice: a.reservePrice?.toString?.() ?? (a.reservePrice == null ? null : String(a.reservePrice)),
@@ -615,10 +635,8 @@ export class AdminService {
         categoryObj: a.listing?.category
           ? {
               id: a.listing.category.id.toString(),
-              nameEn: a.listing.category.nameEn,
-              nameAr: a.listing.category.nameAr,
-              defaultMinBid:
-                a.listing.category.defaultMinBid?.toString?.() ?? String(a.listing.category.defaultMinBid ?? 1),
+              name: a.listing.category.nameEn,
+              defaultMinBid: a.listing.category.defaultMinBid == null ? 1 : Number(a.listing.category.defaultMinBid),
             }
           : null,
 
@@ -655,7 +673,9 @@ export class AdminService {
     };
   }
 
-  // approve now accepts minBid and defaults from category if not provided
+  // ✅ Approve: enforce category defaultMinBid as the floor
+  // - bidStep cannot be less than category defaultMinBid (we auto-raise it to the floor)
+  // - minBid defaults to category defaultMinBid if not provided
   async approveAuction(auctionId: bigint, adminId: bigint, bidStep: number, minBid?: number, reason?: string) {
     const auction: any = await this.prisma.auction.findUnique({
       where: { id: auctionId as any },
@@ -678,18 +698,23 @@ export class AdminService {
       }
     }
 
-    const defaultMinBid =
-      auction?.listing?.category?.defaultMinBid != null ? Number(auction.listing.category.defaultMinBid) : 0;
+    const categoryFloor =
+      auction?.listing?.category?.defaultMinBid != null ? Number(auction.listing.category.defaultMinBid) : 1;
 
-    const finalMinBid = minBid != null ? minBid : defaultMinBid;
+    // ✅ this is the key fix for your screenshot:
+    // If someone sends 1 but category floor is 50 -> use 50
+    const effectiveBidStep = Math.max(Number(bidStep), Number(categoryFloor || 1));
+
+    // minBid defaults to floor if admin didn't set it
+    const effectiveMinBid = minBid != null ? Number(minBid) : Number(categoryFloor || 0);
 
     return this.prisma.$transaction(async (tx) => {
       const updated = await tx.auction.update({
         where: { id: auctionId as any },
         data: {
           status: AuctionStatus.SCHEDULED,
-          bidStep: bidStep,
-          minBid: finalMinBid,
+          bidStep: effectiveBidStep,
+          minBid: effectiveMinBid,
         } as any,
       });
 

@@ -40,14 +40,23 @@ type AuctionRow = {
   startsAt?: string;
   createdAt?: string;
   bidsCount?: number;
-  bidStep?: number | string;
+
+  // can be number or string depending on backend formatting
+  bidStep?: number | string | null;
+
   lastReview?: { decision: string; reason?: string; createdAt: string } | null;
   listing?: {
     id?: string;
     title?: string;
     description?: string | null;
     location?: string | null;
+
+    // what you show on UI
     category?: string | null;
+
+    // ✅ NEW: backend should return this
+    categoryObj?: { id: string; name: string; defaultMinBid?: number | null } | null;
+
     media?: { id: string; filePath: string }[];
   };
 };
@@ -74,7 +83,10 @@ export default function AdminAuctionsPage() {
   const [action, setAction] = useState<AdminAction | null>(null);
   const [reason, setReason] = useState("");
   const [newDescription, setNewDescription] = useState("");
-  const [bidStep, setBidStep] = useState<string>(""); // for APPROVE
+
+  // for APPROVE
+  const [bidStep, setBidStep] = useState<string>("");
+
   const [saving, setSaving] = useState(false);
 
   const apiBase = useMemo(() => API, []);
@@ -133,7 +145,22 @@ export default function AdminAuctionsPage() {
     setNewDescription(a.listing?.description ?? "");
 
     if (nextAction === "APPROVE") {
-      setBidStep(String(a.bidStep ?? 1));
+      // ✅ Use:
+      // 1) existing auction bidStep (if already set)
+      // 2) else category defaultMinBid (floor)
+      // 3) else fallback 1
+      const floorRaw = a.listing?.categoryObj?.defaultMinBid;
+      const floorN = floorRaw == null ? undefined : Number(floorRaw);
+
+      const bidStepRaw = a.bidStep;
+      const bidStepN = bidStepRaw == null ? undefined : Number(bidStepRaw);
+
+      const chosen =
+        (Number.isFinite(bidStepN as any) && (bidStepN as number) > 0 ? (bidStepN as number) : undefined) ??
+        (Number.isFinite(floorN as any) && (floorN as number) > 0 ? (floorN as number) : undefined) ??
+        1;
+
+      setBidStep(String(chosen));
     } else {
       setBidStep("");
     }
@@ -225,7 +252,9 @@ export default function AdminAuctionsPage() {
   }
 
   // ✅ for passing back-link to details
-  const returnTo = `${pathname}${statusFilter && statusFilter !== "ALL" ? `?status=${encodeURIComponent(statusFilter)}` : ""}`;
+  const returnTo = `${pathname}${
+    statusFilter && statusFilter !== "ALL" ? `?status=${encodeURIComponent(statusFilter)}` : ""
+  }`;
 
   return (
     <div className="space-y-6">
@@ -267,7 +296,7 @@ export default function AdminAuctionsPage() {
           className="rounded-2xl border border-white/10 bg-[#0d1117] px-4 py-3 text-sm text-white outline-none"
           style={{ backgroundColor: "#0d1117", color: "white" }}
           value={statusFilter}
-          onChange={(e) => setStatusInUrl(e.target.value)} // ✅ URL drives filter
+          onChange={(e) => setStatusInUrl(e.target.value)}
         >
           <option style={{ backgroundColor: "#0d1117" }} value="PENDING_REVIEW">
             Pending Review
@@ -275,30 +304,24 @@ export default function AdminAuctionsPage() {
           <option style={{ backgroundColor: "#0d1117" }} value="NEEDS_CHANGES">
             Needs Changes
           </option>
-
           <option style={{ backgroundColor: "#0d1117" }} value="SCHEDULED">
             Scheduled
           </option>
-
           <option style={{ backgroundColor: "#0d1117" }} value="LIVE">
             Live
           </option>
           <option style={{ backgroundColor: "#0d1117" }} value="PAUSED">
             Paused
           </option>
-
           <option style={{ backgroundColor: "#0d1117" }} value="ENDED_PENDING_PAYMENT">
             Ended (Pending Payment)
           </option>
-
           <option style={{ backgroundColor: "#0d1117" }} value="COMPLETED">
             Completed
           </option>
-
           <option style={{ backgroundColor: "#0d1117" }} value="CANCELLED">
             Cancelled
           </option>
-
           <option style={{ backgroundColor: "#0d1117" }} value="ALL">
             All Status
           </option>
@@ -349,7 +372,7 @@ export default function AdminAuctionsPage() {
 
             {!!a.listing?.media?.length && (
               <div className="mt-4 flex flex-wrap gap-2">
-                {a.listing.media.slice(0, 5).map((m) => (
+                {a.listing.media!.slice(0, 5).map((m) => (
                   // eslint-disable-next-line @next/next/no-img-element
                   <img
                     key={m.id}
@@ -369,7 +392,6 @@ export default function AdminAuctionsPage() {
                 View (Public) →
               </Link>
 
-              {/* ✅ pass returnTo so detail page goes back to same filter */}
               <Link
                 href={`/admin/auctions/${a.id}?returnTo=${encodeURIComponent(returnTo)}`}
                 className="rounded-2xl bg-[#FF7A1A] px-4 py-2 text-sm font-extrabold text-black hover:brightness-110"
