@@ -42,7 +42,7 @@ export class AdminController {
     return this.admin.rejectKyc(id);
   }
 
-  // ── Categories (NEW) ──────────────────────
+  // ── Categories ────────────────────────────
   @Get('categories')
   categories() {
     return this.admin.listCategories();
@@ -57,6 +57,9 @@ export class AdminController {
       nameEn: string;
       nameAr: string;
       defaultMinBid?: number;
+
+      // ✅ NEW
+      parentId?: string | null;
     },
   ) {
     return this.admin.createCategory(BigInt(req.user.sub), body);
@@ -72,6 +75,9 @@ export class AdminController {
       nameEn?: string;
       nameAr?: string;
       defaultMinBid?: number;
+
+      // ✅ NEW
+      parentId?: string | null;
     },
   ) {
     return this.admin.updateCategory(BigInt(req.user.sub), BigInt(id), body);
@@ -94,7 +100,7 @@ export class AdminController {
       BigInt(id),
       BigInt(req.user.sub),
       body.bidStep,
-      body.minBid, // minBid editable by admin
+      body.minBid,
       body.reason,
     );
   }

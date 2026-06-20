@@ -340,27 +340,52 @@ export class AdminService {
     return { message: 'Seller rejected.' };
   }
 
-  // ── Categories (NEW) ───────────────────────────────────
-  // Admin-only CRUD for Category.defaultMinBid
+  // ── Categories (UPDATED) ───────────────────────────────────
+  // Admin-only CRUD for Category.defaultMinBid + parentId (sub-categories)
 
   async listCategories() {
     const cats: any[] = await this.prisma.category.findMany({
-      orderBy: { nameEn: 'asc' } as any,
+      orderBy: [{ parentId: 'asc' as any }, { nameEn: 'asc' as any }],
+      select: {
+        id: true,
+        slug: true,
+        nameEn: true,
+        nameAr: true,
+        defaultMinBid: true,
+        parentId: true,
+        parent: { select: { id: true, nameEn: true } },
+      } as any,
     });
 
-    // ✅ Return as number (frontend expects number)
     return cats.map((c) => ({
       id: c.id.toString(),
       slug: c.slug,
       nameEn: c.nameEn,
       nameAr: c.nameAr,
       defaultMinBid: c.defaultMinBid == null ? 1 : Number(c.defaultMinBid),
+
+      // ✅ NEW
+      parentId: c.parentId ? c.parentId.toString() : null,
+      parent: c.parent
+        ? {
+            id: c.parent.id.toString(),
+            nameEn: c.parent.nameEn,
+          }
+        : null,
     }));
   }
 
   async createCategory(
     adminId: bigint,
-    body: { slug: string; nameEn: string; nameAr: string; defaultMinBid?: number },
+    body: {
+      slug: string;
+      nameEn: string;
+      nameAr: string;
+      defaultMinBid?: number;
+
+      // ✅ NEW
+      parentId?: string | null;
+    },
   ) {
     const slug = (body.slug || '').trim().toLowerCase();
     const nameEn = (body.nameEn || '').trim();
@@ -370,9 +395,16 @@ export class AdminService {
     if (!nameEn) throw new BadRequestException('nameEn is required');
     if (!nameAr) throw new BadRequestException('nameAr is required');
 
-    // ✅ keep default 1 only if you didn’t set it. Otherwise you can set 50 for Vehicles.
     const dmb = body.defaultMinBid ?? 1;
     if (!Number.isFinite(dmb) || dmb < 0) throw new BadRequestException('defaultMinBid must be >= 0');
+
+    const parentId =
+      body.parentId == null || String(body.parentId).trim() === '' ? null : BigInt(body.parentId);
+
+    if (parentId) {
+      const parent = await this.prisma.category.findUnique({ where: { id: parentId as any } });
+      if (!parent) throw new BadRequestException('Parent category not found');
+    }
 
     try {
       const created: any = await this.prisma.category.create({
@@ -381,6 +413,9 @@ export class AdminService {
           nameEn,
           nameAr,
           defaultMinBid: new Prisma.Decimal(dmb),
+
+          // ✅ NEW
+          parentId: parentId as any,
         } as any,
       });
 
@@ -390,7 +425,13 @@ export class AdminService {
           action: 'CREATE_CATEGORY',
           entity: 'Category',
           entityId: created.id.toString(),
-          metaJson: JSON.stringify({ slug, nameEn, nameAr, defaultMinBid: dmb }),
+          metaJson: JSON.stringify({
+            slug,
+            nameEn,
+            nameAr,
+            defaultMinBid: dmb,
+            parentId: parentId ? parentId.toString() : null,
+          }),
         } as any,
       });
 
@@ -402,6 +443,9 @@ export class AdminService {
           nameEn: created.nameEn,
           nameAr: created.nameAr,
           defaultMinBid: Number(created.defaultMinBid),
+
+          // ✅ NEW
+          parentId: created.parentId ? created.parentId.toString() : null,
         },
       };
     } catch (e) {
@@ -412,7 +456,15 @@ export class AdminService {
   async updateCategory(
     adminId: bigint,
     categoryId: bigint,
-    body: { slug?: string; nameEn?: string; nameAr?: string; defaultMinBid?: number },
+    body: {
+      slug?: string;
+      nameEn?: string;
+      nameAr?: string;
+      defaultMinBid?: number;
+
+      // ✅ NEW
+      parentId?: string | null;
+    },
   ) {
     const existing: any = await this.prisma.category.findUnique({
       where: { id: categoryId as any },
@@ -442,6 +494,23 @@ export class AdminService {
       data.defaultMinBid = new Prisma.Decimal(dmb);
     }
 
+    // ✅ NEW: parentId update
+    if (body.parentId !== undefined) {
+      const parentId =
+        body.parentId == null || String(body.parentId).trim() === '' ? null : BigInt(body.parentId);
+
+      if (parentId && parentId === categoryId) {
+        throw new BadRequestException('Category cannot be its own parent');
+      }
+
+      if (parentId) {
+        const parent = await this.prisma.category.findUnique({ where: { id: parentId as any } });
+        if (!parent) throw new BadRequestException('Parent category not found');
+      }
+
+      data.parentId = parentId as any;
+    }
+
     try {
       const updated: any = await this.prisma.category.update({
         where: { id: categoryId as any },
@@ -466,6 +535,9 @@ export class AdminService {
           nameEn: updated.nameEn,
           nameAr: updated.nameAr,
           defaultMinBid: Number(updated.defaultMinBid),
+
+          // ✅ NEW
+          parentId: updated.parentId ? updated.parentId.toString() : null,
         },
       };
     } catch (e) {
@@ -508,7 +580,7 @@ export class AdminService {
         // keep the display field
         category: a.listing?.category?.nameEn ?? '—',
 
-        // ✅ NEW: give frontend the object and defaultMinBid as number
+        // ✅ give frontend the object and defaultMinBid as number
         categoryObj: a.listing?.category
           ? {
               id: a.listing.category.id.toString(),
@@ -631,7 +703,6 @@ export class AdminService {
 
         category: a.listing?.category?.nameEn ?? '—',
 
-        // provide categoryObj so frontend can read defaultMinBid
         categoryObj: a.listing?.category
           ? {
               id: a.listing.category.id.toString(),
@@ -674,8 +745,6 @@ export class AdminService {
   }
 
   // ✅ Approve: enforce category defaultMinBid as the floor
-  // - bidStep cannot be less than category defaultMinBid (we auto-raise it to the floor)
-  // - minBid defaults to category defaultMinBid if not provided
   async approveAuction(auctionId: bigint, adminId: bigint, bidStep: number, minBid?: number, reason?: string) {
     const auction: any = await this.prisma.auction.findUnique({
       where: { id: auctionId as any },
@@ -701,11 +770,7 @@ export class AdminService {
     const categoryFloor =
       auction?.listing?.category?.defaultMinBid != null ? Number(auction.listing.category.defaultMinBid) : 1;
 
-    // ✅ this is the key fix for your screenshot:
-    // If someone sends 1 but category floor is 50 -> use 50
     const effectiveBidStep = Math.max(Number(bidStep), Number(categoryFloor || 1));
-
-    // minBid defaults to floor if admin didn't set it
     const effectiveMinBid = minBid != null ? Number(minBid) : Number(categoryFloor || 0);
 
     return this.prisma.$transaction(async (tx) => {

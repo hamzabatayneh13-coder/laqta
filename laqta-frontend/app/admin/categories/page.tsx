@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { apiFetch } from "../../../lib/api";
 
 type Cat = {
@@ -8,7 +8,13 @@ type Cat = {
   slug: string;
   nameEn: string;
   nameAr: string;
-  defaultMinBid: string; // backend returns Decimal -> string
+
+  // UI keeps it as string (input). Backend can return number; we normalize on load.
+  defaultMinBid: string;
+
+  // ✅ NEW
+  parentId: string | null;
+  parent?: { id: string; nameEn: string } | null;
 };
 
 function Badge({ text }: { text: string }) {
@@ -32,13 +38,31 @@ export default function AdminCategoriesPage() {
   const [nameAr, setNameAr] = useState("");
   const [defaultMinBid, setDefaultMinBid] = useState("10");
 
+  // ✅ NEW
+  const [parentId, setParentId] = useState<string>(""); // "" means none
+
+  const topLevelCats = useMemo(() => cats.filter((c) => !c.parentId), [cats]);
+
   async function load() {
     setErr(null);
     setOk(null);
     setLoading(true);
     try {
       const data = await apiFetch("/api/admin/categories");
-      setCats(Array.isArray(data) ? data : []);
+      const arr = Array.isArray(data) ? data : [];
+
+      // normalize types for UI
+      const normalized: Cat[] = arr.map((c: any) => ({
+        id: String(c.id),
+        slug: String(c.slug ?? ""),
+        nameEn: String(c.nameEn ?? ""),
+        nameAr: String(c.nameAr ?? ""),
+        defaultMinBid: c.defaultMinBid == null ? "1" : String(c.defaultMinBid),
+        parentId: c.parentId == null ? null : String(c.parentId),
+        parent: c.parent ?? null,
+      }));
+
+      setCats(normalized);
     } catch (e: any) {
       setErr(e?.message ?? "Failed to load categories");
     } finally {
@@ -73,12 +97,17 @@ export default function AdminCategoriesPage() {
           nameEn: nameEn.trim(),
           nameAr: nameAr.trim(),
           defaultMinBid: dmb,
+
+          // ✅ NEW
+          parentId: parentId.trim() ? parentId.trim() : null,
         }),
       });
+
       setOk("Category created");
       setSlug("");
       setNameEn("");
       setNameAr("");
+      setParentId("");
       await load();
     } catch (e: any) {
       setErr(e?.message ?? "Failed to create category");
@@ -100,6 +129,12 @@ export default function AdminCategoriesPage() {
       return;
     }
 
+    // prevent self-parent in UI
+    if (c.parentId && c.parentId === c.id) {
+      setErr("Category cannot be its own parent");
+      return;
+    }
+
     try {
       await apiFetch(`/api/admin/categories/${c.id}`, {
         method: "PUT",
@@ -108,8 +143,12 @@ export default function AdminCategoriesPage() {
           nameEn: c.nameEn.trim(),
           nameAr: c.nameAr.trim(),
           defaultMinBid: dmb,
+
+          // ✅ NEW
+          parentId: c.parentId ? c.parentId : null,
         }),
       });
+
       setOk(`Saved: ${c.nameEn}`);
       await load();
     } catch (e: any) {
@@ -133,7 +172,7 @@ export default function AdminCategoriesPage() {
           <div className="text-sm font-extrabold text-white/70">Admin</div>
           <h1 className="mt-1 text-3xl font-extrabold text-white">Categories</h1>
           <div className="mt-1 text-sm text-white/60">
-            Manage categories + <b>defaultMinBid</b> (Admin-only).
+            Manage categories + <b>defaultMinBid</b> + <b>sub-categories</b> (Admin-only).
           </div>
         </div>
         <Badge text={`${cats.length} categories`} />
@@ -154,7 +193,7 @@ export default function AdminCategoriesPage() {
       <div className="rounded-3xl border border-white/10 bg-white/5 p-7 shadow-2xl backdrop-blur">
         <h2 className="text-xl font-extrabold text-white">Add New Category</h2>
 
-        <div className="mt-4 grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
+        <div className="mt-4 grid gap-3 sm:grid-cols-2 lg:grid-cols-5">
           <input
             value={slug}
             onChange={(e) => setSlug(e.target.value)}
@@ -179,6 +218,23 @@ export default function AdminCategoriesPage() {
             placeholder="defaultMinBid (JOD)"
             className="rounded-2xl border border-white/10 bg-black/20 px-4 py-3 text-sm text-white placeholder:text-white/30 outline-none focus:ring-2 focus:ring-[#FF7A1A]/40"
           />
+
+          {/* ✅ NEW: parent */}
+          <select
+            value={parentId}
+            onChange={(e) => setParentId(e.target.value)}
+            className="rounded-2xl border border-white/10 bg-[#0d1117] px-4 py-3 text-sm text-white outline-none focus:ring-2 focus:ring-[#FF7A1A]/40"
+            style={{ backgroundColor: "#0d1117", color: "white" }}
+          >
+            <option style={{ backgroundColor: "#0d1117" }} value="">
+              Parent: None (Top-level)
+            </option>
+            {topLevelCats.map((p) => (
+              <option key={p.id} style={{ backgroundColor: "#0d1117" }} value={p.id}>
+                Parent: {p.nameEn}
+              </option>
+            ))}
+          </select>
         </div>
 
         <button
@@ -198,9 +254,10 @@ export default function AdminCategoriesPage() {
         <h2 className="text-xl font-extrabold text-white">All Categories</h2>
 
         <div className="mt-4 overflow-x-auto">
-          <table className="w-full min-w-[900px] text-sm text-white/80">
+          <table className="w-full min-w-[1100px] text-sm text-white/80">
             <thead>
               <tr className="text-left text-xs text-white/50">
+                <th className="py-2">Parent</th>
                 <th className="py-2">Slug</th>
                 <th className="py-2">Name (EN)</th>
                 <th className="py-2">Name (AR)</th>
@@ -211,6 +268,31 @@ export default function AdminCategoriesPage() {
             <tbody>
               {cats.map((c) => (
                 <tr key={c.id} className="border-t border-white/10">
+                  {/* parent selector */}
+                  <td className="py-3 pr-3">
+                    <select
+                      value={c.parentId ?? ""}
+                      onChange={(e) => {
+                        const v = e.target.value || null;
+                        setCats((prev) => prev.map((x) => (x.id === c.id ? { ...x, parentId: v } : x)));
+                      }}
+                      className="w-full rounded-xl border border-white/10 bg-[#0d1117] px-3 py-2 text-white outline-none focus:ring-2 focus:ring-[#FF7A1A]/30"
+                      style={{ backgroundColor: "#0d1117", color: "white" }}
+                    >
+                      <option style={{ backgroundColor: "#0d1117" }} value="">
+                        None
+                      </option>
+                      {/* only allow choosing top-level parents, and not itself */}
+                      {topLevelCats
+                        .filter((p) => p.id !== c.id)
+                        .map((p) => (
+                          <option key={p.id} style={{ backgroundColor: "#0d1117" }} value={p.id}>
+                            {p.nameEn}
+                          </option>
+                        ))}
+                    </select>
+                  </td>
+
                   <td className="py-3 pr-3">
                     <input
                       value={c.slug}
@@ -221,6 +303,7 @@ export default function AdminCategoriesPage() {
                       className="w-full rounded-xl border border-white/10 bg-black/20 px-3 py-2 text-white outline-none focus:ring-2 focus:ring-[#FF7A1A]/30"
                     />
                   </td>
+
                   <td className="py-3 pr-3">
                     <input
                       value={c.nameEn}
@@ -231,6 +314,7 @@ export default function AdminCategoriesPage() {
                       className="w-full rounded-xl border border-white/10 bg-black/20 px-3 py-2 text-white outline-none focus:ring-2 focus:ring-[#FF7A1A]/30"
                     />
                   </td>
+
                   <td className="py-3 pr-3">
                     <input
                       value={c.nameAr}
@@ -241,6 +325,7 @@ export default function AdminCategoriesPage() {
                       className="w-full rounded-xl border border-white/10 bg-black/20 px-3 py-2 text-white outline-none focus:ring-2 focus:ring-[#FF7A1A]/30"
                     />
                   </td>
+
                   <td className="py-3 pr-3">
                     <input
                       value={c.defaultMinBid}
@@ -251,6 +336,7 @@ export default function AdminCategoriesPage() {
                       className="w-full rounded-xl border border-white/10 bg-black/20 px-3 py-2 text-white outline-none focus:ring-2 focus:ring-[#FF7A1A]/30"
                     />
                   </td>
+
                   <td className="py-3">
                     <button
                       onClick={() => saveRow(c)}
@@ -264,7 +350,7 @@ export default function AdminCategoriesPage() {
 
               {cats.length === 0 && (
                 <tr>
-                  <td className="py-4 text-white/60" colSpan={5}>
+                  <td className="py-4 text-white/60" colSpan={6}>
                     No categories found. Create your first category above.
                   </td>
                 </tr>
@@ -274,7 +360,7 @@ export default function AdminCategoriesPage() {
         </div>
 
         <div className="mt-3 text-xs text-white/45">
-          defaultMinBid is used during auction approval if auction.minBid is empty.
+          Sub-categories: set <b>Parent</b> to create a child under a top-level category.
         </div>
       </div>
     </div>

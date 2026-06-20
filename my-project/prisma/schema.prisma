@@ -81,12 +81,12 @@ model User {
 
   sellerProfile SellerProfile?
   kycDocuments  KycDocument[]
-  listings     Listing[] @relation("SellerListings")
-  auctions     Auction[] @relation("SellerAuctions")
-  bids         Bid[]
-  buyerOrders  Order[]   @relation("BuyerOrders")
-  sellerOrders Order[]   @relation("SellerOrders")
-  disputes     Dispute[] @relation("UserDisputes")
+  listings      Listing[]      @relation("SellerListings")
+  auctions      Auction[]      @relation("SellerAuctions")
+  bids          Bid[]
+  buyerOrders   Order[]        @relation("BuyerOrders")
+  sellerOrders  Order[]        @relation("SellerOrders")
+  disputes      Dispute[]      @relation("UserDisputes")
 }
 
 model SellerProfile {
@@ -133,8 +133,13 @@ model Category {
   nameEn String
   nameAr String
 
-  // ✅ NEW: default minimum allowed bid amount for auctions in this category
+  // default minimum allowed bid amount for auctions in this category
   defaultMinBid Decimal @default(1.0)
+
+  // ✅ NEW: hierarchy (sub-categories)
+  parentId BigInt?
+  parent   Category?  @relation("CategoryHierarchy", fields: [parentId], references: [id])
+  children Category[] @relation("CategoryHierarchy")
 
   listings Listing[]
 }
@@ -149,8 +154,8 @@ model Listing {
   status      ListingStatus @default(DRAFT)
   createdAt   DateTime      @default(now())
 
-  seller   User     @relation("SellerListings", fields: [sellerId], references: [id])
-  category Category @relation(fields: [categoryId], references: [id])
+  seller   User           @relation("SellerListings", fields: [sellerId], references: [id])
+  category Category       @relation(fields: [categoryId], references: [id])
   media    ListingMedia[]
   auction  Auction?
 }
@@ -165,32 +170,32 @@ model ListingMedia {
 }
 
 model Auction {
-  id                       BigInt        @id @default(autoincrement())
-  listingId                BigInt        @unique
-  sellerId                 BigInt
-  status                   AuctionStatus @default(SCHEDULED)
-  startsAt                 DateTime
-  endsAt                   DateTime
-  pausedAt                 DateTime?
-  totalPausedMs            BigInt        @default(0)
+  id            BigInt        @id @default(autoincrement())
+  listingId     BigInt        @unique
+  sellerId      BigInt
+  status        AuctionStatus @default(SCHEDULED)
+  startsAt      DateTime
+  endsAt        DateTime
+  pausedAt      DateTime?
+  totalPausedMs BigInt        @default(0)
 
   // ✅ seller starting price
-  startPrice               Decimal       @default(0.0)
+  startPrice Decimal @default(0.0)
 
   // ✅ minimum increment between bids
-  bidStep                  Decimal       @default(1.0)
+  bidStep Decimal @default(1.0)
 
   // ✅ NEW: admin sets this (defaults from category but editable); minimum allowed bid amount (floor)
-  minBid                   Decimal?
+  minBid Decimal?
 
-  currentPrice             Decimal       @default(0.0)
+  currentPrice             Decimal  @default(0.0)
   currentWinnerUserId      BigInt?
   reservePrice             Decimal?
-  reserveMode              String        @default("SELLER_CHOICE")
-  antiSnipingEnabled       Boolean       @default(true)
-  antiSnipingLastSeconds   Int           @default(60)
-  antiSnipingExtendSeconds Int           @default(120)
-  createdAt                DateTime      @default(now())
+  reserveMode              String   @default("SELLER_CHOICE")
+  antiSnipingEnabled       Boolean  @default(true)
+  antiSnipingLastSeconds   Int      @default(60)
+  antiSnipingExtendSeconds Int      @default(120)
+  createdAt                DateTime @default(now())
 
   listing Listing @relation(fields: [listingId], references: [id])
   seller  User    @relation("SellerAuctions", fields: [sellerId], references: [id])
@@ -227,8 +232,8 @@ model Order {
   createdAt     DateTime      @default(now())
 
   auction  Auction   @relation(fields: [auctionId], references: [id])
-  buyer   User       @relation("BuyerOrders", fields: [buyerId], references: [id])
-  seller  User       @relation("SellerOrders", fields: [sellerId], references: [id])
+  buyer    User      @relation("BuyerOrders", fields: [buyerId], references: [id])
+  seller   User      @relation("SellerOrders", fields: [sellerId], references: [id])
   disputes Dispute[]
 }
 
