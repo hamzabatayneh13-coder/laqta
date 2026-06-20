@@ -156,8 +156,8 @@ export default function AdminAuctionsPage() {
       const bidStepN = bidStepRaw == null ? undefined : Number(bidStepRaw);
 
       const chosen =
-        (Number.isFinite(bidStepN as any) && (bidStepN as number) > 0 ? (bidStepN as number) : undefined) ??
         (Number.isFinite(floorN as any) && (floorN as number) > 0 ? (floorN as number) : undefined) ??
+        (Number.isFinite(bidStepN as any) && (bidStepN as number) > 0 ? (bidStepN as number) : undefined) ??
         1;
 
       setBidStep(String(chosen));
