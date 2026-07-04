@@ -1,8 +1,23 @@
-import { Body, Controller, Get, Param, Post, Put, Query, Req, UseGuards } from '@nestjs/common';
+import {
+  Body,
+  Controller,
+  Delete,
+  Get,
+  Param,
+  Post,
+  Put,
+  Query,
+  Req,
+  UseGuards,
+} from '@nestjs/common';
 import { AuthGuard } from '@nestjs/passport';
 import { AdminGuard } from './admin.guard';
 import { AdminService } from './admin.service';
-import { ApproveAuctionDto, RejectAuctionDto, RequestChangesAuctionDto } from './dto/auction-review.dto';
+import {
+  ApproveAuctionDto,
+  RejectAuctionDto,
+  RequestChangesAuctionDto,
+} from './dto/auction-review.dto';
 
 @Controller('api/admin')
 @UseGuards(AuthGuard('jwt'), AdminGuard)
@@ -83,6 +98,12 @@ export class AdminController {
     return this.admin.updateCategory(BigInt(req.user.sub), BigInt(id), body);
   }
 
+  // ✅ NEW: Delete category (for Admin UI "Delete" button)
+  @Delete('categories/:id')
+  deleteCategory(@Req() req: any, @Param('id') id: string) {
+    return this.admin.deleteCategory(BigInt(req.user.sub), BigInt(id));
+  }
+
   // ── Auctions ──────────────────────────────
   @Get('auctions')
   auctions(@Query('status') status?: string) {
@@ -95,7 +116,11 @@ export class AdminController {
   }
 
   @Post('auctions/:id/approve')
-  approveAuction(@Param('id') id: string, @Req() req: any, @Body() body: ApproveAuctionDto) {
+  approveAuction(
+    @Param('id') id: string,
+    @Req() req: any,
+    @Body() body: ApproveAuctionDto,
+  ) {
     return this.admin.approveAuction(
       BigInt(id),
       BigInt(req.user.sub),
@@ -106,7 +131,11 @@ export class AdminController {
   }
 
   @Post('auctions/:id/request-changes')
-  requestChangesAuction(@Param('id') id: string, @Req() req: any, @Body() body: RequestChangesAuctionDto) {
+  requestChangesAuction(
+    @Param('id') id: string,
+    @Req() req: any,
+    @Body() body: RequestChangesAuctionDto,
+  ) {
     return this.admin.requestChangesAuction(
       BigInt(id),
       BigInt(req.user.sub),
@@ -116,8 +145,16 @@ export class AdminController {
   }
 
   @Post('auctions/:id/reject')
-  rejectAuction(@Param('id') id: string, @Req() req: any, @Body() body: RejectAuctionDto) {
-    return this.admin.rejectAuction(BigInt(id), BigInt(req.user.sub), body.reason);
+  rejectAuction(
+    @Param('id') id: string,
+    @Req() req: any,
+    @Body() body: RejectAuctionDto,
+  ) {
+    return this.admin.rejectAuction(
+      BigInt(id),
+      BigInt(req.user.sub),
+      body.reason,
+    );
   }
 
   @Post('auctions/:id/pause')
@@ -131,7 +168,15 @@ export class AdminController {
   }
 
   @Post('auctions/:id/close')
-  closeAuction(@Param('id') id: string, @Req() req: any, @Body() body?: { reason?: string }) {
-    return this.admin.closeAuction(BigInt(id), BigInt(req.user.sub), body?.reason);
+  closeAuction(
+    @Param('id') id: string,
+    @Req() req: any,
+    @Body() body?: { reason?: string },
+  ) {
+    return this.admin.closeAuction(
+      BigInt(id),
+      BigInt(req.user.sub),
+      body?.reason,
+    );
   }
 }

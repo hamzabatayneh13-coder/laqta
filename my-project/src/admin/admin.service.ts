@@ -14,6 +14,7 @@ export class AdminService {
     });
 
     if (!auction) throw new NotFoundException('Auction not found');
+
     if (auction.status !== AuctionStatus.LIVE) {
       throw new BadRequestException('Only LIVE auctions can be paused');
     }
@@ -50,15 +51,18 @@ export class AdminService {
     });
 
     if (!auction) throw new NotFoundException('Auction not found');
+
     if (auction.status !== AuctionStatus.PAUSED) {
       throw new BadRequestException('Only PAUSED auctions can be resumed');
     }
+
     if (!auction.pausedAt) {
       throw new BadRequestException('Auction is PAUSED but pausedAt is missing');
     }
 
     const now = new Date();
     const pausedMs = now.getTime() - new Date(auction.pausedAt).getTime();
+
     if (pausedMs < 0) throw new BadRequestException('Invalid pausedAt timestamp');
 
     const oldEndsAt = new Date(auction.endsAt);
@@ -363,8 +367,6 @@ export class AdminService {
       nameEn: c.nameEn,
       nameAr: c.nameAr,
       defaultMinBid: c.defaultMinBid == null ? 1 : Number(c.defaultMinBid),
-
-      // ✅ NEW
       parentId: c.parentId ? c.parentId.toString() : null,
       parent: c.parent
         ? {
@@ -382,8 +384,6 @@ export class AdminService {
       nameEn: string;
       nameAr: string;
       defaultMinBid?: number;
-
-      // ✅ NEW
       parentId?: string | null;
     },
   ) {
@@ -413,8 +413,6 @@ export class AdminService {
           nameEn,
           nameAr,
           defaultMinBid: new Prisma.Decimal(dmb),
-
-          // ✅ NEW
           parentId: parentId as any,
         } as any,
       });
@@ -443,8 +441,6 @@ export class AdminService {
           nameEn: created.nameEn,
           nameAr: created.nameAr,
           defaultMinBid: Number(created.defaultMinBid),
-
-          // ✅ NEW
           parentId: created.parentId ? created.parentId.toString() : null,
         },
       };
@@ -461,14 +457,13 @@ export class AdminService {
       nameEn?: string;
       nameAr?: string;
       defaultMinBid?: number;
-
-      // ✅ NEW
       parentId?: string | null;
     },
   ) {
     const existing: any = await this.prisma.category.findUnique({
       where: { id: categoryId as any },
     });
+
     if (!existing) throw new NotFoundException('Category not found');
 
     const data: any = {};
@@ -478,23 +473,25 @@ export class AdminService {
       if (!slug) throw new BadRequestException('slug cannot be empty');
       data.slug = slug;
     }
+
     if (body.nameEn !== undefined) {
       const nameEn = String(body.nameEn).trim();
       if (!nameEn) throw new BadRequestException('nameEn cannot be empty');
       data.nameEn = nameEn;
     }
+
     if (body.nameAr !== undefined) {
       const nameAr = String(body.nameAr).trim();
       if (!nameAr) throw new BadRequestException('nameAr cannot be empty');
       data.nameAr = nameAr;
     }
+
     if (body.defaultMinBid !== undefined) {
       const dmb = Number(body.defaultMinBid);
       if (!Number.isFinite(dmb) || dmb < 0) throw new BadRequestException('defaultMinBid must be >= 0');
       data.defaultMinBid = new Prisma.Decimal(dmb);
     }
 
-    // ✅ NEW: parentId update
     if (body.parentId !== undefined) {
       const parentId =
         body.parentId == null || String(body.parentId).trim() === '' ? null : BigInt(body.parentId);
@@ -535,14 +532,79 @@ export class AdminService {
           nameEn: updated.nameEn,
           nameAr: updated.nameAr,
           defaultMinBid: Number(updated.defaultMinBid),
-
-          // ✅ NEW
           parentId: updated.parentId ? updated.parentId.toString() : null,
         },
       };
     } catch (e) {
       throw new BadRequestException('Update failed (slug may already exist).');
     }
+  }
+
+  // ✅ NEW: Delete Category (Admin)
+  async deleteCategory(adminId: bigint, categoryId: bigint) {
+    const existing = await this.prisma.category.findUnique({
+      where: { id: categoryId as any },
+      select: {
+        id: true,
+        slug: true,
+        nameEn: true,
+        nameAr: true,
+        parentId: true,
+      },
+    });
+
+    if (!existing) throw new NotFoundException('Category not found');
+
+    // 1) Block delete if it has children
+    const childrenCount = await this.prisma.category.count({
+      where: { parentId: categoryId as any },
+    });
+
+    if (childrenCount > 0) {
+      throw new BadRequestException(
+        'Cannot delete a parent category that still has sub-categories. Delete/move the sub-categories first.',
+      );
+    }
+
+    // 2) Block delete if used by listings
+    const listingCount = await this.prisma.listing.count({
+      where: { categoryId: categoryId as any },
+    });
+
+    if (listingCount > 0) {
+      throw new BadRequestException(
+        'Cannot delete category because it is used by existing listings. Move those listings to another category first.',
+      );
+    }
+
+    return this.prisma.$transaction(async (tx) => {
+      await tx.category.delete({
+        where: { id: categoryId as any },
+      });
+
+      await tx.auditLog.create({
+        data: {
+          adminId: adminId as any,
+          action: 'DELETE_CATEGORY',
+          entity: 'Category',
+          entityId: categoryId.toString(),
+          metaJson: JSON.stringify({
+            deleted: {
+              id: existing.id.toString(),
+              slug: existing.slug,
+              nameEn: existing.nameEn,
+              nameAr: existing.nameAr,
+              parentId: existing.parentId ? existing.parentId.toString() : null,
+            },
+          }),
+        } as any,
+      });
+
+      return {
+        message: 'Category deleted',
+        categoryId: categoryId.toString(),
+      };
+    });
   }
 
   // ── Auctions review workflow ───────────────────────────
@@ -648,7 +710,6 @@ export class AdminService {
       pausedAt: a.pausedAt,
       totalPausedMs: a.totalPausedMs?.toString?.() ?? String(a.totalPausedMs ?? 0),
       startPrice: a.startPrice?.toString?.() ?? String(a.startPrice ?? 0),
-
       bidStep: a.bidStep == null ? null : Number(a.bidStep),
 
       // minBid saved by admin (nullable)
@@ -700,9 +761,7 @@ export class AdminService {
         title: a.listing?.title ?? '—',
         description: a.listing?.description ?? null,
         location: a.listing?.location ?? '—',
-
         category: a.listing?.category?.nameEn ?? '—',
-
         categoryObj: a.listing?.category
           ? {
               id: a.listing.category.id.toString(),
@@ -710,7 +769,6 @@ export class AdminService {
               defaultMinBid: a.listing.category.defaultMinBid == null ? 1 : Number(a.listing.category.defaultMinBid),
             }
           : null,
-
         media: (a.listing?.media || []).map((m: any) => ({
           id: m.id.toString(),
           filePath: m.filePath,
@@ -745,6 +803,7 @@ export class AdminService {
   }
 
   // ✅ Approve: enforce category defaultMinBid as the floor
+
   async approveAuction(auctionId: bigint, adminId: bigint, bidStep: number, minBid?: number, reason?: string) {
     const auction: any = await this.prisma.auction.findUnique({
       where: { id: auctionId as any },

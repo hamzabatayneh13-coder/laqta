@@ -1,9 +1,9 @@
+// laqta-frontend/components/SiteHeader.tsx
 "use client";
 
 import Link from "next/link";
 import { useEffect, useMemo, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
-
 import { AuthNav } from "./AuthNav";
 import { getCachedMe, refreshMe, type MeUser } from "@/lib/me";
 import { apiFetch } from "@/lib/api";
@@ -22,7 +22,10 @@ type Category = {
   slug: string;
   nameEn: string;
   nameAr: string;
+  parentId?: string | number | null;
 };
+
+type CategoryNode = Category & { children: CategoryNode[] };
 
 function decodeJwt(token: string): JwtPayload | null {
   try {
@@ -39,6 +42,42 @@ function readToken() {
   return sessionStorage.getItem("laqta_token");
 }
 
+function buildCategoryTree(items: Category[]): CategoryNode[] {
+  const map = new Map<string, CategoryNode>();
+  for (const c of items) {
+    map.set(String(c.id), { ...c, children: [] });
+  }
+
+  const roots: CategoryNode[] = [];
+
+  for (const node of map.values()) {
+    const pid = node.parentId;
+
+    if (pid === null || pid === undefined || pid === "") {
+      roots.push(node);
+      continue;
+    }
+
+    const parent = map.get(String(pid));
+    if (!parent) {
+      roots.push(node);
+      continue;
+    }
+    parent.children.push(node);
+  }
+
+  const sortByName = (a: CategoryNode, b: CategoryNode) =>
+    (a.nameEn || "").localeCompare(b.nameEn || "");
+
+  const sortRecursive = (nodes: CategoryNode[]) => {
+    nodes.sort(sortByName);
+    for (const n of nodes) sortRecursive(n.children);
+  };
+
+  sortRecursive(roots);
+  return roots;
+}
+
 export default function SiteHeader() {
   const router = useRouter();
 
@@ -50,6 +89,15 @@ export default function SiteHeader() {
   const [catOpen, setCatOpen] = useState(false);
   const catRef = useRef<HTMLDivElement | null>(null);
 
+  // ✅ More dropdown (legal/info links)
+  const [moreOpen, setMoreOpen] = useState(false);
+  const moreRef = useRef<HTMLDivElement | null>(null);
+
+  // ✅ Expand parents inside dropdown (B behavior)
+  const [expandedParents, setExpandedParents] = useState<Record<string, boolean>>(
+    {}
+  );
+
   // ✅ Sell modal state
   const [showSellerModal, setShowSellerModal] = useState(false);
   const [becomingSeller, setBecomingSeller] = useState(false);
@@ -59,7 +107,6 @@ export default function SiteHeader() {
     const syncToken = () => setToken(readToken());
     syncToken();
 
-    // load cached me immediately (fast UI)
     setMe(getCachedMe());
 
     const onAuth = async () => {
@@ -70,10 +117,8 @@ export default function SiteHeader() {
 
     const onMe = () => setMe(getCachedMe());
 
-    // refresh on mount (so role updates without relogin)
     refreshMe().then(setMe);
 
-    // refresh when user returns to the tab
     const onFocus = () => refreshMe().then(setMe);
 
     window.addEventListener("laqta:auth", onAuth);
@@ -110,20 +155,25 @@ export default function SiteHeader() {
     return () => document.removeEventListener("mousedown", onDocClick);
   }, []);
 
-  const payload = useMemo(() => (token ? decodeJwt(token) : null), [token]);
+  // ✅ Close "More" dropdown on outside click
+  useEffect(() => {
+    function onDocClick(e: MouseEvent) {
+      if (!moreRef.current) return;
+      if (moreRef.current.contains(e.target as Node)) return;
+      setMoreOpen(false);
+    }
+    document.addEventListener("mousedown", onDocClick);
+    return () => document.removeEventListener("mousedown", onDocClick);
+  }, []);
 
-  // ✅ role now comes from server /auth/me (fresh), fallback to token if needed
+  const payload = useMemo(() => (token ? decodeJwt(token) : null), [token]);
   const role = me?.role || payload?.role; // BUYER | SELLER | ADMIN
+  const tree = useMemo(() => buildCategoryTree(categories), [categories]);
 
   // ✅ Sell button logic
   const onSellClick = (e: React.MouseEvent<HTMLAnchorElement>) => {
-    // If not logged in → allow normal navigation to login
     if (!token) return;
-
-    // If already seller/admin → allow normal navigation to create auction
     if (role === "SELLER" || role === "ADMIN") return;
-
-    // Otherwise: buyer → open modal (no navigation)
     e.preventDefault();
     setSellerErr(null);
     setShowSellerModal(true);
@@ -135,14 +185,9 @@ export default function SiteHeader() {
 
     try {
       await apiFetch("/users/become-seller", { method: "POST" });
-
-      // refresh role immediately
       const next = await refreshMe();
       setMe(next);
-
       setShowSellerModal(false);
-
-      // ✅ go to create auction page (same tab)
       router.push("/seller/auctions/new");
     } catch (err: any) {
       setSellerErr(err?.message || "Failed to become a seller. Please try again.");
@@ -153,7 +198,6 @@ export default function SiteHeader() {
 
   function declineBecomeSeller() {
     setShowSellerModal(false);
-    // ✅ if he does NOT want to be a seller → go to live auctions
     router.push("/auctions/live");
   }
 
@@ -162,7 +206,12 @@ export default function SiteHeader() {
       ? "/auth/login"
       : role === "SELLER" || role === "ADMIN"
         ? "/seller/auctions/new"
-        : "/seller/auctions/new"; // buyer will be intercepted by onSellClick
+        : "/seller/auctions/new";
+
+  function toggleParent(id: string | number) {
+    const key = String(id);
+    setExpandedParents((prev) => ({ ...prev, [key]: !prev[key] }));
+  }
 
   return (
     <header className="sticky top-0 z-50 border-b border-white/10 bg-black/20 backdrop-blur">
@@ -180,7 +229,7 @@ export default function SiteHeader() {
             Live Auctions
           </Link>
 
-          {/* ✅ Categories for everyone */}
+          {/* ✅ Expandable categories dropdown (Parent expands children) */}
           <div className="relative" ref={catRef}>
             <button
               type="button"
@@ -191,7 +240,7 @@ export default function SiteHeader() {
             </button>
 
             {catOpen && (
-              <div className="absolute left-0 mt-2 w-64 overflow-hidden rounded-2xl border border-white/10 bg-[#070B14]/95 shadow-2xl backdrop-blur">
+              <div className="absolute left-0 mt-2 w-80 overflow-hidden rounded-2xl border border-white/10 bg-[#070B14]/95 shadow-2xl backdrop-blur">
                 <Link
                   href="/auctions/live"
                   onClick={() => setCatOpen(false)}
@@ -202,59 +251,176 @@ export default function SiteHeader() {
 
                 <div className="h-px bg-white/10" />
 
-                {categories.length === 0 ? (
-                  <div className="px-4 py-3 text-sm text-white/70">No categories</div>
+                {tree.length === 0 ? (
+                  <div className="px-4 py-3 text-sm text-white/70">
+                    No categories
+                  </div>
                 ) : (
-                  categories.map((c) => (
-                    <Link
-                      key={String(c.id)}
-                      href={`/auctions/live?category=${encodeURIComponent(c.slug)}`}
-                      onClick={() => setCatOpen(false)}
-                      className="block px-4 py-3 text-sm text-white/85 hover:bg-white/10"
-                    >
-                      {c.nameEn} <span className="text-white/50">({c.nameAr})</span>
-                    </Link>
-                  ))
+                  <div className="max-h-[70vh] overflow-auto">
+                    {tree.map((parent) => {
+                      const isOpen = !!expandedParents[String(parent.id)];
+                      return (
+                        <div
+                          key={String(parent.id)}
+                          className="border-b border-white/10 last:border-b-0"
+                        >
+                          {/* Parent row (B: expand only, not selectable) */}
+                          <button
+                            type="button"
+                            onClick={() => toggleParent(parent.id)}
+                            className="flex w-full items-center justify-between px-4 py-3 text-left text-sm font-semibold text-white/90 hover:bg-white/10"
+                          >
+                            <span>
+                              {parent.nameEn}{" "}
+                              <span className="text-white/50">
+                                ({parent.nameAr})
+                              </span>
+                            </span>
+                            <span className="text-white/60">
+                              {isOpen ? "▴" : "▾"}
+                            </span>
+                          </button>
+
+                          {/* Children */}
+                          {isOpen && (
+                            <div className="pb-2">
+                              {parent.children.length === 0 ? (
+                                <div className="px-4 pb-2 text-xs text-white/50">
+                                  No sub-categories
+                                </div>
+                              ) : (
+                                parent.children.map((ch) => (
+                                  <Link
+                                    key={String(ch.id)}
+                                    href={`/auctions/live?category=${encodeURIComponent(
+                                      ch.slug
+                                    )}`}
+                                    onClick={() => setCatOpen(false)}
+                                    className="block px-8 py-2 text-sm text-white/80 hover:bg-white/10"
+                                  >
+                                    — {ch.nameEn}{" "}
+                                    <span className="text-white/50">
+                                      ({ch.nameAr})
+                                    </span>
+                                  </Link>
+                                ))
+                              )}
+                            </div>
+                          )}
+                        </div>
+                      );
+                    })}
+                  </div>
                 )}
               </div>
             )}
           </div>
 
           {/* ✅ Sell: buyer opens modal */}
-          <Link className="hover:text-[#FF7A1A]" href={sellHref} onClick={onSellClick}>
+          <Link
+            className="hover:text-[#FF7A1A]"
+            href={sellHref}
+            onClick={onSellClick}
+          >
             Sell
           </Link>
 
-          {role === "ADMIN" && (
-            <Link className="hover:text-[#FF7A1A]" href="/admin">
-              Admin
-            </Link>
+          {/* ✅ If Admin: Admin then More | If not Admin: More after Sell */}
+          {role === "ADMIN" ? (
+            <>
+              <Link className="hover:text-[#FF7A1A]" href="/admin">
+                Admin
+              </Link>
+
+              {/* ✅ More dropdown (after Admin) */}
+              <div className="relative" ref={moreRef}>
+                <button
+                  type="button"
+                  onClick={() => setMoreOpen((v) => !v)}
+                  className="hover:text-[#FF7A1A]"
+                >
+                  More
+                </button>
+
+                {moreOpen && (
+                  <div className="absolute left-0 mt-2 w-56 overflow-hidden rounded-2xl border border-white/10 bg-[#070B14]/95 shadow-2xl backdrop-blur">
+                    <Link
+                      href="/about"
+                      onClick={() => setMoreOpen(false)}
+                      className="block px-4 py-3 text-sm text-white/85 hover:bg-white/10"
+                    >
+                      About Us
+                    </Link>
+
+                    <Link
+                      href="/privacy"
+                      onClick={() => setMoreOpen(false)}
+                      className="block px-4 py-3 text-sm text-white/85 hover:bg-white/10"
+                    >
+                      Privacy Policy
+                    </Link>
+                  </div>
+                )}
+              </div>
+            </>
+          ) : (
+            <>
+              {/* ✅ More dropdown (after Sell) */}
+              <div className="relative" ref={moreRef}>
+                <button
+                  type="button"
+                  onClick={() => setMoreOpen((v) => !v)}
+                  className="hover:text-[#FF7A1A]"
+                >
+                  More
+                </button>
+
+                {moreOpen && (
+                  <div className="absolute left-0 mt-2 w-56 overflow-hidden rounded-2xl border border-white/10 bg-[#070B14]/95 shadow-2xl backdrop-blur">
+                    <Link
+                      href="/about"
+                      onClick={() => setMoreOpen(false)}
+                      className="block px-4 py-3 text-sm text-white/85 hover:bg-white/10"
+                    >
+                      About Us
+                    </Link>
+
+                    <Link
+                      href="/privacy"
+                      onClick={() => setMoreOpen(false)}
+                      className="block px-4 py-3 text-sm text-white/85 hover:bg-white/10"
+                    >
+                      Privacy Policy
+                    </Link>
+                  </div>
+                )}
+              </div>
+            </>
           )}
 
           <AuthNav />
         </nav>
       </div>
 
-      {/* ✅ Improved centered + safe modal */}
+      {/* ✅ modal */}
       {showSellerModal && (
         <div className="fixed inset-0 z-[9999]">
-          {/* Backdrop (click closes) */}
           <button
             aria-label="Close"
             className="absolute inset-0 cursor-default bg-black/60 backdrop-blur-sm"
             onClick={() => !becomingSeller && setShowSellerModal(false)}
           />
 
-          {/* Center wrapper */}
           <div className="relative flex min-h-full items-center justify-center p-4 sm:p-6">
             <div className="w-full max-w-md rounded-3xl border border-white/10 bg-[#070B14] shadow-2xl">
-              {/* Header */}
               <div className="flex items-start justify-between gap-3 p-6">
                 <div>
-                  <div className="text-lg font-extrabold text-white">Become a seller</div>
+                  <div className="text-lg font-extrabold text-white">
+                    Become a seller
+                  </div>
                   <p className="mt-2 text-sm text-white/70">
-                    To create auctions, your account needs seller access. Enable it now and start
-                    selling.
+                    To create auctions, your account needs seller access. Enable
+                    it now and start selling.
                   </p>
                 </div>
 
@@ -268,7 +434,6 @@ export default function SiteHeader() {
                 </button>
               </div>
 
-              {/* Body (scroll-safe) */}
               <div className="max-h-[60vh] overflow-auto px-6 pb-6">
                 <div className="rounded-2xl border border-white/10 bg-white/5 p-4 text-sm text-white/75">
                   <div className="font-extrabold text-white/90">What you get</div>
@@ -285,7 +450,6 @@ export default function SiteHeader() {
                   </div>
                 )}
 
-                {/* Actions */}
                 <div className="mt-6 flex flex-col-reverse gap-3 sm:flex-row sm:justify-end">
                   <button
                     type="button"

@@ -1,3 +1,4 @@
+// laqta-frontend/app/page.tsx
 "use client";
 
 import Link from "next/link";
@@ -194,10 +195,15 @@ export default function HomePage() {
       {/* 2) What we measure */}
       <section className="grid gap-6 lg:grid-cols-1">
         <div className="rounded-3xl border border-white/10 bg-white/5 p-7 shadow-2xl backdrop-blur">
-          <div className="text-sm font-extrabold text-white/70">What we measure</div>
-          <h3 className="mt-2 text-2xl font-extrabold text-white">Simple metrics panel</h3>
+          <div className="text-sm font-extrabold text-white/70">
+            What we measure
+          </div>
+          <h3 className="mt-2 text-2xl font-extrabold text-white">
+            Simple metrics panel
+          </h3>
           <p className="mt-3 text-white/65">
-            Keep it short and operational: activity, conversion, and trust signals.
+            Keep it short and operational: activity, conversion, and trust
+            signals.
           </p>
 
           <div className="mt-6 grid grid-cols-2 gap-4">
@@ -213,7 +219,9 @@ export default function HomePage() {
       <section>
         <div>
           <div className="text-sm font-extrabold text-white/70">How it works</div>
-          <h2 className="mt-2 text-3xl font-extrabold text-white">Buyer + Seller Journey</h2>        
+          <h2 className="mt-2 text-3xl font-extrabold text-white">
+            Buyer + Seller Journey
+          </h2>
         </div>
 
         {/* Tabs */}
@@ -271,13 +279,18 @@ export default function HomePage() {
       <section>
         <div>
           <div className="text-sm font-extrabold text-white/70">Categories</div>
-          <h2 className="mt-2 text-3xl font-extrabold text-white">Browse by category</h2>
+          <h2 className="mt-2 text-3xl font-extrabold text-white">
+            Browse by category
+          </h2>
         </div>
 
         <div className="mt-6 grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
           <CategoryCard title="Scrap" desc="Metal, industrial scrap, bulk lots" />
           <CategoryCard title="Vehicles" desc="Cars, pickup, fleet, salvage" />
-          <CategoryCard title="Machinery" desc="Construction, tools, heavy equipment" />
+          <CategoryCard
+            title="Machinery"
+            desc="Construction, tools, heavy equipment"
+          />
           <CategoryCard title="Electronics" desc="Phones, laptops, appliances" />
           <CategoryCard title="Real Estate" desc="Land, shops, warehouses" />
           <CategoryCard title="Collectibles" desc="Watches, antiques, rare items" />
@@ -329,17 +342,7 @@ export default function HomePage() {
           <div className="mt-10 flex flex-wrap items-center justify-between gap-4 border-t border-white/10 pt-6 text-sm text-white/60">
             <div>© {new Date().getFullYear()} Laqta (لقطة)</div>
 
-            <div className="flex gap-4">
-              <Link className="hover:text-[#FF7A1A]" href="/terms">
-                Terms
-              </Link>
-              <Link className="hover:text-[#FF7A1A]" href="/privacy">
-                Privacy
-              </Link>
-              <Link className="hover:text-[#FF7A1A]" href="/support">
-                Support
-              </Link>
-            </div>
+            {/* ✅ Removed Terms/Privacy/Support links from landing footer */}
           </div>
         </section>
       </HideWhenLoggedIn>
